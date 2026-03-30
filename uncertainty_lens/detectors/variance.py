@@ -66,9 +66,7 @@ class VarianceDetector:
         self.results_ = results
         return results
 
-    def _compute_basic_stats(
-        self, df: pd.DataFrame, cols: List[str]
-    ) -> Dict[str, Dict]:
+    def _compute_basic_stats(self, df: pd.DataFrame, cols: List[str]) -> Dict[str, Dict]:
         stats_dict = {}
         for col in cols:
             series = df[col].dropna()
@@ -87,9 +85,7 @@ class VarianceDetector:
             }
         return stats_dict
 
-    def _compute_cv(
-        self, df: pd.DataFrame, cols: List[str]
-    ) -> Dict[str, Dict]:
+    def _compute_cv(self, df: pd.DataFrame, cols: List[str]) -> Dict[str, Dict]:
         """
         Compute coefficient of variation (CV = std / mean).
 
@@ -108,13 +104,7 @@ class VarianceDetector:
 
             cv = float(series.std() / abs(mean))
             level = (
-                "low"
-                if cv < 0.2
-                else "medium"
-                if cv < 0.5
-                else "high"
-                if cv < 1.0
-                else "very high"
+                "low" if cv < 0.2 else "medium" if cv < 0.5 else "high" if cv < 1.0 else "very high"
             )
 
             cv_dict[col] = {
@@ -172,12 +162,8 @@ class VarianceDetector:
                 "total_variance": round(total_var, 4),
                 "between_group_variance": round(between_var, 4),
                 "within_group_variance": round(within_var, 4),
-                "between_group_ratio": round(between_var / total_var, 4)
-                if total_var > 0
-                else 0,
-                "within_group_ratio": round(within_var / total_var, 4)
-                if total_var > 0
-                else 0,
+                "between_group_ratio": round(between_var / total_var, 4) if total_var > 0 else 0,
+                "within_group_ratio": round(within_var / total_var, 4) if total_var > 0 else 0,
                 "n_groups": int(grouped.ngroups),
             }
 
@@ -221,9 +207,7 @@ class VarianceDetector:
 
         return temporal
 
-    def _compute_uncertainty_score(
-        self, cv: float, unexplained_ratio: float
-    ) -> float:
+    def _compute_uncertainty_score(self, cv: float, unexplained_ratio: float) -> float:
         if cv == float("inf"):
             cv_score = 1.0
         else:

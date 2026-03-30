@@ -20,9 +20,7 @@ def generate_ad_data(n: int = 1000, seed: int = 42) -> pd.DataFrame:
     """Generate synthetic advertising data with realistic uncertainty patterns."""
     np.random.seed(seed)
 
-    channels = np.random.choice(
-        ["Search Ads", "Social Media", "Video", "Feed", "Email"], n
-    )
+    channels = np.random.choice(["Search Ads", "Social Media", "Video", "Feed", "Email"], n)
 
     df = pd.DataFrame(
         {
@@ -67,9 +65,7 @@ def main():
     print()
 
     # Run the pipeline
-    pipeline = UncertaintyPipeline(
-        weights={"missing": 0.4, "anomaly": 0.3, "variance": 0.3}
-    )
+    pipeline = UncertaintyPipeline(weights={"missing": 0.4, "anomaly": 0.3, "variance": 0.3})
     report = pipeline.analyze(df, group_col="channel")
 
     # Print uncertainty index

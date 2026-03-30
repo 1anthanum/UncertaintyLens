@@ -13,6 +13,7 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from uncertainty_lens.pipeline import UncertaintyPipeline
+from uncertainty_lens.quantifiers import MonteCarloQuantifier
 from uncertainty_lens.visualizers import (
     create_uncertainty_heatmap,
     create_uncertainty_bar,
@@ -20,7 +21,6 @@ from uncertainty_lens.visualizers import (
     create_distribution_comparison,
     create_info_loss_sankey,
 )
-
 
 # ========== Page Config ==========
 st.set_page_config(
@@ -52,32 +52,36 @@ with st.sidebar:
     else:
         np.random.seed(42)
         n = 1000
-        df = pd.DataFrame({
-            "channel": np.random.choice(
-                ["Search Ads", "Social Media", "Video", "Feed", "Email"],
-                n,
-            ),
-            "impressions": np.random.lognormal(8, 1.5, n).astype(int),
-            "clicks": np.where(
-                np.random.random(n) > 0.1,
-                np.random.lognormal(5, 1.2, n).astype(int),
-                np.nan,
-            ),
-            "conversions": np.where(
-                np.random.random(n) > 0.25,
-                np.random.poisson(10, n),
-                np.nan,
-            ),
-            "spend": np.concatenate([
-                np.random.lognormal(6, 0.8, n - 30),
-                np.random.lognormal(9, 0.5, 30),
-            ]),
-            "attributed_revenue": np.where(
-                np.random.random(n) > 0.35,
-                np.random.lognormal(7, 1.5, n),
-                np.nan,
-            ),
-        })
+        df = pd.DataFrame(
+            {
+                "channel": np.random.choice(
+                    ["Search Ads", "Social Media", "Video", "Feed", "Email"],
+                    n,
+                ),
+                "impressions": np.random.lognormal(8, 1.5, n).astype(int),
+                "clicks": np.where(
+                    np.random.random(n) > 0.1,
+                    np.random.lognormal(5, 1.2, n).astype(int),
+                    np.nan,
+                ),
+                "conversions": np.where(
+                    np.random.random(n) > 0.25,
+                    np.random.poisson(10, n),
+                    np.nan,
+                ),
+                "spend": np.concatenate(
+                    [
+                        np.random.lognormal(6, 0.8, n - 30),
+                        np.random.lognormal(9, 0.5, 30),
+                    ]
+                ),
+                "attributed_revenue": np.where(
+                    np.random.random(n) > 0.35,
+                    np.random.lognormal(7, 1.5, n),
+                    np.nan,
+                ),
+            }
+        )
         st.success("Loaded sample advertising data (1,000 records)")
 
     if df is not None:
@@ -140,14 +144,18 @@ if df is not None:
 
     # ===== Heatmap =====
     st.markdown("## 🌡️ Uncertainty Heatmap")
-    st.markdown("Redder = higher uncertainty. Red zones are where your data needs the most attention.")
+    st.markdown(
+        "Redder = higher uncertainty. Red zones are where your data needs the most attention."
+    )
 
     fig_heatmap = create_uncertainty_heatmap(report["uncertainty_index"])
     st.plotly_chart(fig_heatmap, use_container_width=True)
 
     # ===== Stacked Bar =====
     st.markdown("## 📊 Uncertainty Composition")
-    st.markdown("What drives each feature's uncertainty? Blue = missing, Yellow = anomaly, Red = variance.")
+    st.markdown(
+        "What drives each feature's uncertainty? Blue = missing, Yellow = anomaly, Red = variance."
+    )
 
     fig_bar = create_uncertainty_bar(report["uncertainty_index"])
     st.plotly_chart(fig_bar, use_container_width=True)
@@ -157,9 +165,7 @@ if df is not None:
     st.markdown("From raw data to reliable data — how much information is lost?")
 
     missing_rows = int(df.isnull().any(axis=1).sum())
-    anomaly_count = sum(
-        report["anomaly_analysis"].get("consensus_anomalies", {}).values()
-    )
+    anomaly_count = sum(report["anomaly_analysis"].get("consensus_anomalies", {}).values())
     high_var_count = sum(
         1
         for v in report["variance_analysis"].get("cv_analysis", {}).values()
@@ -190,11 +196,52 @@ if df is not None:
                 st.markdown("*Wider error bars = higher uncertainty for that group*")
 
             with tab2:
-                fig_violin = create_distribution_comparison(
-                    df, selected_col, group_col
-                )
+                fig_violin = create_distribution_comparison(df, selected_col, group_col)
                 st.plotly_chart(fig_violin, use_container_width=True)
                 st.markdown("*Wider/more irregular distributions = higher uncertainty*")
+
+    # ===== Monte Carlo Sensitivity =====
+    st.markdown("## 🎲 Monte Carlo Sensitivity Analysis")
+    st.markdown(
+        "How much would your key statistics change if we re-imputed missing values "
+        "and added small noise? Higher sensitivity = less trustworthy."
+    )
+
+    numeric_cols_mc = df.select_dtypes(include=[np.number]).columns.tolist()
+    mc_col = st.selectbox("Select feature for Monte Carlo analysis", numeric_cols_mc, key="mc_col")
+
+    if mc_col:
+        with st.spinner("Running Monte Carlo simulations (200 trials)..."):
+            quantifier = MonteCarloQuantifier(n_simulations=200)
+            mc_result = quantifier.estimate(df, statistic_fn=lambda d: d[mc_col].mean())
+
+        if "error" not in mc_result:
+            mc1, mc2, mc3 = st.columns(3)
+            mc1.metric("Point Estimate", f"{mc_result['point_estimate']:.2f}")
+            mc2.metric(
+                "95% CI Width",
+                f"{mc_result['confidence_interval_95'][1] - mc_result['confidence_interval_95'][0]:.2f}",
+            )
+            mc3.metric("Sensitivity Ratio", f"{mc_result['sensitivity_ratio']:.4f}")
+
+            st.markdown(
+                f"**95% Confidence Interval**: "
+                f"[{mc_result['confidence_interval_95'][0]:.2f}, "
+                f"{mc_result['confidence_interval_95'][1]:.2f}]"
+            )
+
+            if mc_result["sensitivity_ratio"] > 0.5:
+                st.warning(
+                    f"High sensitivity ({mc_result['sensitivity_ratio']:.2%}) — "
+                    f"the mean of `{mc_col}` is significantly affected by data uncertainty."
+                )
+            else:
+                st.success(
+                    f"Low sensitivity ({mc_result['sensitivity_ratio']:.2%}) — "
+                    f"the mean of `{mc_col}` is robust to data uncertainty."
+                )
+        else:
+            st.warning(f"Monte Carlo analysis failed: {mc_result['error']}")
 
     # ===== Detailed Report =====
     with st.expander("🔬 View Detailed Analysis Data", expanded=False):

@@ -124,7 +124,9 @@ class MonteCarloQuantifier:
             if observed_mask.any() and self.noise_scale > 0:
                 std = series[observed_mask].std()
                 if pd.notna(std) and std > 0:
-                    noise = self.rng.normal(0, std * self.noise_scale, size=int(observed_mask.sum()))
+                    noise = self.rng.normal(
+                        0, std * self.noise_scale, size=int(observed_mask.sum())
+                    )
                     perturbed.loc[observed_mask, col] = series[observed_mask].values + noise
 
         return perturbed

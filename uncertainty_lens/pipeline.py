@@ -109,9 +109,7 @@ class UncertaintyPipeline:
         else:
             return "High"
 
-    def _generate_summary(
-        self, uncertainty_index: Dict, df: pd.DataFrame
-    ) -> Dict[str, Any]:
+    def _generate_summary(self, uncertainty_index: Dict, df: pd.DataFrame) -> Dict[str, Any]:
         if not uncertainty_index:
             return {"message": "No numeric features to analyze"}
 
@@ -126,19 +124,11 @@ class UncertaintyPipeline:
             "overall_level": self._score_to_level(avg_score),
             "total_features_analyzed": len(uncertainty_index),
             "high_uncertainty_features": [
-                col
-                for col, v in uncertainty_index.items()
-                if v["composite_score"] >= 0.6
+                col for col, v in uncertainty_index.items() if v["composite_score"] >= 0.6
             ],
             "low_uncertainty_features": [
-                col
-                for col, v in uncertainty_index.items()
-                if v["composite_score"] < 0.2
+                col for col, v in uncertainty_index.items() if v["composite_score"] < 0.2
             ],
-            "top_3_uncertain": [
-                {"feature": col, **vals} for col, vals in top_uncertain
-            ],
-            "most_reliable": [
-                {"feature": col, **vals} for col, vals in bottom_uncertain
-            ],
+            "top_3_uncertain": [{"feature": col, **vals} for col, vals in top_uncertain],
+            "most_reliable": [{"feature": col, **vals} for col, vals in bottom_uncertain],
         }

@@ -39,9 +39,7 @@ def create_confidence_plot(
 
         mean = data.mean()
         se = stats.sem(data)
-        ci = stats.t.interval(
-            confidence_level, df=len(data) - 1, loc=mean, scale=se
-        )
+        ci = stats.t.interval(confidence_level, df=len(data) - 1, loc=mean, scale=se)
 
         group_names.append(str(group))
         means.append(mean)
@@ -53,30 +51,32 @@ def create_confidence_plot(
 
     fig = go.Figure()
 
-    fig.add_trace(go.Scatter(
-        x=group_names,
-        y=means,
-        error_y=dict(
-            type="data",
-            symmetric=False,
-            array=[u - m for u, m in zip(ci_upper, means)],
-            arrayminus=[m - l for m, l in zip(means, ci_lower)],
-            color="rgba(214, 39, 40, 0.6)",
-            thickness=2,
-            width=10,
-        ),
-        mode="markers",
-        marker=dict(size=10, color="#1f77b4"),
-        name=f"Mean +/- {confidence_level:.0%} CI",
-        hovertemplate=(
-            "Group: %{x}<br>"
-            "Mean: %{y:.2f}<br>"
-            "CI Width: %{customdata[0]:.2f}<br>"
-            "Sample Size: %{customdata[1]}<br>"
-            "<extra></extra>"
-        ),
-        customdata=list(zip(ci_widths, n_samples)),
-    ))
+    fig.add_trace(
+        go.Scatter(
+            x=group_names,
+            y=means,
+            error_y=dict(
+                type="data",
+                symmetric=False,
+                array=[u - m for u, m in zip(ci_upper, means)],
+                arrayminus=[m - l for m, l in zip(means, ci_lower)],
+                color="rgba(214, 39, 40, 0.6)",
+                thickness=2,
+                width=10,
+            ),
+            mode="markers",
+            marker=dict(size=10, color="#1f77b4"),
+            name=f"Mean +/- {confidence_level:.0%} CI",
+            hovertemplate=(
+                "Group: %{x}<br>"
+                "Mean: %{y:.2f}<br>"
+                "CI Width: %{customdata[0]:.2f}<br>"
+                "Sample Size: %{customdata[1]}<br>"
+                "<extra></extra>"
+            ),
+            customdata=list(zip(ci_widths, n_samples)),
+        )
+    )
 
     if not title:
         title = f"{value_col} — Grouped Confidence Intervals ({confidence_level:.0%} CI)"
@@ -119,14 +119,16 @@ def create_distribution_comparison(
         if len(data) < 5:
             continue
 
-        fig.add_trace(go.Violin(
-            y=data,
-            name=str(group),
-            box_visible=True,
-            meanline_visible=True,
-            line_color=colors[i % len(colors)],
-            fillcolor=f"rgba{tuple(list(px.colors.hex_to_rgb(colors[i % len(colors)])) + [0.3])}",
-        ))
+        fig.add_trace(
+            go.Violin(
+                y=data,
+                name=str(group),
+                box_visible=True,
+                meanline_visible=True,
+                line_color=colors[i % len(colors)],
+                fillcolor=f"rgba{tuple(list(px.colors.hex_to_rgb(colors[i % len(colors)])) + [0.3])}",
+            )
+        )
 
     if not title:
         title = f"{value_col} — Distribution Comparison by {group_col}"

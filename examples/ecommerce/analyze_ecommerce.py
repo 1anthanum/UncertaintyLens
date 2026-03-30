@@ -20,7 +20,8 @@ def generate_ecommerce_data(n: int = 2000, seed: int = 123) -> pd.DataFrame:
     np.random.seed(seed)
 
     categories = np.random.choice(
-        ["Electronics", "Clothing", "Home & Garden", "Books", "Food"], n,
+        ["Electronics", "Clothing", "Home & Garden", "Books", "Food"],
+        n,
         p=[0.25, 0.30, 0.15, 0.15, 0.15],
     )
 
@@ -79,9 +80,7 @@ def main():
     print("Uncertainty Index:")
     print("-" * 70)
     for col, vals in report["uncertainty_index"].items():
-        print(
-            f"  {col:25s} | composite: {vals['composite_score']:.3f} | {vals['level']}"
-        )
+        print(f"  {col:25s} | composite: {vals['composite_score']:.3f} | {vals['level']}")
     print()
 
     summary = report["summary"]

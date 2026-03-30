@@ -53,14 +53,12 @@ class MissingPatternDetector:
             "total_columns": df.shape[1],
             "total_cells": total_cells,
             "total_missing": int(total_missing),
-            "overall_missing_rate": round(total_missing / total_cells, 4)
-            if total_cells > 0
-            else 0,
+            "overall_missing_rate": round(total_missing / total_cells, 4) if total_cells > 0 else 0,
             "columns_with_missing": int((df.isna().sum() > 0).sum()),
             "complete_rows": int(df.dropna().shape[0]),
-            "complete_row_rate": round(df.dropna().shape[0] / df.shape[0], 4)
-            if df.shape[0] > 0
-            else 0,
+            "complete_row_rate": (
+                round(df.dropna().shape[0] / df.shape[0], 4) if df.shape[0] > 0 else 0
+            ),
         }
 
     def _compute_missing_rates(self, df: pd.DataFrame) -> Dict[str, float]:
@@ -112,9 +110,7 @@ class MissingPatternDetector:
                 if len(group_missing) < 5 or len(group_present) < 5:
                     continue
 
-                t_stat, p_val = stats.ttest_ind(
-                    group_missing, group_present, equal_var=False
-                )
+                t_stat, p_val = stats.ttest_ind(group_missing, group_present, equal_var=False)
                 key = f"{target_col}_vs_{other_col}"
                 p_values[key] = round(float(p_val), 4)
 
@@ -136,9 +132,7 @@ class MissingPatternDetector:
             ),
         }
 
-    def _compute_uncertainty_score(
-        self, missing_rate: float, is_random: bool
-    ) -> float:
+    def _compute_uncertainty_score(self, missing_rate: float, is_random: bool) -> float:
         """
         Compute per-feature missing-uncertainty score (0–1).
 

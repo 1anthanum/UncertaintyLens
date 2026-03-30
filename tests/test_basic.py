@@ -17,7 +17,6 @@ from uncertainty_lens.detectors import (
 )
 from uncertainty_lens.quantifiers import MonteCarloQuantifier
 
-
 # ========== Fixtures ==========
 
 
@@ -86,11 +85,7 @@ class TestMissingPatternDetector:
         assert "mcar_test" in results
 
         # missing_feature should have highest missing rate among numeric cols
-        numeric_rates = {
-            k: v
-            for k, v in results["missing_rates"].items()
-            if k != "channel"
-        }
+        numeric_rates = {k: v for k, v in results["missing_rates"].items() if k != "channel"}
         max_col = max(numeric_rates, key=numeric_rates.get)
         assert max_col == "missing_feature"
 
@@ -230,9 +225,7 @@ class TestPipeline:
             assert 0 <= vals["composite_score"] <= 1
 
     def test_custom_weights(self, sample_df):
-        pipeline = UncertaintyPipeline(
-            weights={"missing": 1.0, "anomaly": 0.0, "variance": 0.0}
-        )
+        pipeline = UncertaintyPipeline(weights={"missing": 1.0, "anomaly": 0.0, "variance": 0.0})
         report = pipeline.analyze(sample_df)
 
         # With only missing weight, composite should equal missing score
@@ -279,9 +272,7 @@ class TestPipeline:
 class TestMonteCarloQuantifier:
     def test_basic_estimation(self, sample_df):
         quantifier = MonteCarloQuantifier(n_simulations=100)
-        result = quantifier.estimate(
-            sample_df, statistic_fn=lambda d: d["clean_feature"].mean()
-        )
+        result = quantifier.estimate(sample_df, statistic_fn=lambda d: d["clean_feature"].mean())
 
         assert "point_estimate" in result
         assert "confidence_interval_95" in result
@@ -289,9 +280,7 @@ class TestMonteCarloQuantifier:
 
     def test_with_missing_data(self, sample_df):
         quantifier = MonteCarloQuantifier(n_simulations=100)
-        result = quantifier.estimate(
-            sample_df, statistic_fn=lambda d: d["missing_feature"].mean()
-        )
+        result = quantifier.estimate(sample_df, statistic_fn=lambda d: d["missing_feature"].mean())
 
         # CI should be wider due to missing data uncertainty
         ci = result["confidence_interval_95"]
@@ -299,17 +288,13 @@ class TestMonteCarloQuantifier:
 
     def test_sensitivity_ratio(self, sample_df):
         quantifier = MonteCarloQuantifier(n_simulations=100)
-        result = quantifier.estimate(
-            sample_df, statistic_fn=lambda d: d["clean_feature"].mean()
-        )
+        result = quantifier.estimate(sample_df, statistic_fn=lambda d: d["clean_feature"].mean())
 
         # Clean feature should have low sensitivity
         assert result["sensitivity_ratio"] < 1.0
 
     def test_small_dataset(self, tiny_df):
         quantifier = MonteCarloQuantifier(n_simulations=50)
-        result = quantifier.estimate(
-            tiny_df, statistic_fn=lambda d: d["x"].mean()
-        )
+        result = quantifier.estimate(tiny_df, statistic_fn=lambda d: d["x"].mean())
 
         assert "point_estimate" in result

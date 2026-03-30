@@ -21,38 +21,39 @@ def create_uncertainty_heatmap(
     z_data = []
     for col in features:
         vals = uncertainty_index[col]
-        z_data.append([
-            vals["missing_score"],
-            vals["anomaly_score"],
-            vals["variance_score"],
-            vals["composite_score"],
-        ])
+        z_data.append(
+            [
+                vals["missing_score"],
+                vals["anomaly_score"],
+                vals["variance_score"],
+                vals["composite_score"],
+            ]
+        )
 
     z_array = np.array(z_data)
 
-    fig = go.Figure(data=go.Heatmap(
-        z=z_array,
-        x=dimensions,
-        y=features,
-        colorscale=[
-            [0.0, "#1a9641"],
-            [0.25, "#a6d96a"],
-            [0.5, "#ffffbf"],
-            [0.75, "#fdae61"],
-            [1.0, "#d7191c"],
-        ],
-        zmin=0,
-        zmax=1,
-        text=[[f"{v:.3f}" for v in row] for row in z_data],
-        texttemplate="%{text}",
-        textfont={"size": 12},
-        hovertemplate=(
-            "Feature: %{y}<br>"
-            "Dimension: %{x}<br>"
-            "Score: %{z:.3f}<br>"
-            "<extra></extra>"
-        ),
-    ))
+    fig = go.Figure(
+        data=go.Heatmap(
+            z=z_array,
+            x=dimensions,
+            y=features,
+            colorscale=[
+                [0.0, "#1a9641"],
+                [0.25, "#a6d96a"],
+                [0.5, "#ffffbf"],
+                [0.75, "#fdae61"],
+                [1.0, "#d7191c"],
+            ],
+            zmin=0,
+            zmax=1,
+            text=[[f"{v:.3f}" for v in row] for row in z_data],
+            texttemplate="%{text}",
+            textfont={"size": 12},
+            hovertemplate=(
+                "Feature: %{y}<br>" "Dimension: %{x}<br>" "Score: %{z:.3f}<br>" "<extra></extra>"
+            ),
+        )
+    )
 
     fig.update_layout(
         title={"text": title, "font": {"size": 18}},
@@ -78,24 +79,30 @@ def create_uncertainty_bar(
 
     fig = go.Figure()
 
-    fig.add_trace(go.Bar(
-        name="Missing",
-        x=features,
-        y=missing_scores,
-        marker_color="#3288bd",
-    ))
-    fig.add_trace(go.Bar(
-        name="Anomaly",
-        x=features,
-        y=anomaly_scores,
-        marker_color="#fee08b",
-    ))
-    fig.add_trace(go.Bar(
-        name="Variance",
-        x=features,
-        y=variance_scores,
-        marker_color="#d53e4f",
-    ))
+    fig.add_trace(
+        go.Bar(
+            name="Missing",
+            x=features,
+            y=missing_scores,
+            marker_color="#3288bd",
+        )
+    )
+    fig.add_trace(
+        go.Bar(
+            name="Anomaly",
+            x=features,
+            y=anomaly_scores,
+            marker_color="#fee08b",
+        )
+    )
+    fig.add_trace(
+        go.Bar(
+            name="Variance",
+            x=features,
+            y=variance_scores,
+            marker_color="#d53e4f",
+        )
+    )
 
     fig.update_layout(
         barmode="stack",

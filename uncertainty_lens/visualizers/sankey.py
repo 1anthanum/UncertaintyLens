@@ -64,21 +64,25 @@ def create_info_loss_sankey(
         "rgba(156,39,176,0.2)",
     ]
 
-    fig = go.Figure(data=[go.Sankey(
-        node=dict(
-            pad=20,
-            thickness=30,
-            line=dict(color="black", width=0.5),
-            label=labels,
-            color=node_colors,
-        ),
-        link=dict(
-            source=source,
-            target=target,
-            value=value,
-            color=link_colors,
-        ),
-    )])
+    fig = go.Figure(
+        data=[
+            go.Sankey(
+                node=dict(
+                    pad=20,
+                    thickness=30,
+                    line=dict(color="black", width=0.5),
+                    label=labels,
+                    color=node_colors,
+                ),
+                link=dict(
+                    source=source,
+                    target=target,
+                    value=value,
+                    color=link_colors,
+                ),
+            )
+        ]
+    )
 
     loss_rate = uncertain_total / total_records if total_records > 0 else 0
 

@@ -50,9 +50,7 @@ class AnomalyDetector:
         iso_flags = self._detect_isolation_forest(numeric_df)
         lof_flags = self._detect_lof(numeric_df)
 
-        vote_matrix = (
-            iqr_flags.astype(int) + iso_flags.astype(int) + lof_flags.astype(int)
-        )
+        vote_matrix = iqr_flags.astype(int) + iso_flags.astype(int) + lof_flags.astype(int)
         consensus_flags = vote_matrix >= self.min_votes
 
         results = {

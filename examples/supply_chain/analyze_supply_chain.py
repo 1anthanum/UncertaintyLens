@@ -20,7 +20,8 @@ def generate_supply_chain_data(n: int = 1500, seed: int = 77) -> pd.DataFrame:
     np.random.seed(seed)
 
     regions = np.random.choice(
-        ["North America", "Europe", "Asia Pacific", "Latin America"], n,
+        ["North America", "Europe", "Asia Pacific", "Latin America"],
+        n,
         p=[0.35, 0.30, 0.25, 0.10],
     )
 
@@ -76,17 +77,13 @@ def main():
     print(f"  Missing values: {df.isna().sum().sum()}")
     print()
 
-    pipeline = UncertaintyPipeline(
-        weights={"missing": 0.3, "anomaly": 0.35, "variance": 0.35}
-    )
+    pipeline = UncertaintyPipeline(weights={"missing": 0.3, "anomaly": 0.35, "variance": 0.35})
     report = pipeline.analyze(df, group_col="region")
 
     print("Uncertainty Index:")
     print("-" * 70)
     for col, vals in report["uncertainty_index"].items():
-        print(
-            f"  {col:25s} | composite: {vals['composite_score']:.3f} | {vals['level']}"
-        )
+        print(f"  {col:25s} | composite: {vals['composite_score']:.3f} | {vals['level']}")
     print()
 
     summary = report["summary"]
