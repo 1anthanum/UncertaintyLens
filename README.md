@@ -7,6 +7,8 @@ UncertaintyLens is a Python toolkit that automatically detects uncertainty in ta
 ![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue)
 ![License: MIT](https://img.shields.io/badge/license-MIT-green)
 
+> **Live Demo**: [Try it on Hugging Face Spaces](https://huggingface.co/spaces/1anthanum/UncertaintyLens)
+
 ## Why UncertaintyLens?
 
 Most data quality tools stop at "you have 5% missing values." UncertaintyLens goes further:
@@ -21,7 +23,7 @@ Most data quality tools stop at "you have 5% missing values." UncertaintyLens go
 ### Installation
 
 ```bash
-git clone https://github.com/your-username/UncertaintyLens.git
+git clone https://github.com/1anthanum/UncertaintyLens.git
 cd UncertaintyLens
 pip install -e .
 ```
