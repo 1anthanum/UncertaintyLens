@@ -6,7 +6,7 @@ colorTo: purple
 sdk: docker
 pinned: false
 license: mit
-short_description: Reveal what your data doesn't know -- and how much that ignorance costs.
+short_description: Reveal what your data doesn't know.
 ---
 
 # UncertaintyLens
