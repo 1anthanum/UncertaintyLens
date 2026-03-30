@@ -7,7 +7,7 @@ UncertaintyLens is a Python toolkit that automatically detects uncertainty in ta
 ![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue)
 ![License: MIT](https://img.shields.io/badge/license-MIT-green)
 
-> **Live Demo**: [Try it on Hugging Face Spaces](https://huggingface.co/spaces/1anthanum/UncertaintyLens)
+> **Live Demo**: [Try it on Hugging Face Spaces](https://huggingface.co/spaces/xuyangchen/UncertaintyLens)
 
 ## Why UncertaintyLens?
 
