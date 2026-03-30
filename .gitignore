@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.venv/
+
+# IDE
+.vscode/
+.idea/
+
+# Data files
+*.csv
+*.parquet
+data/raw/
+
+# System files
+.DS_Store
+
+# Personal planning docs (not for public repo)
+Portfolio_Action_Plan.md
+Project2_Anomaly_Detection_Plan.md
+UncertaintyLens_完整教程.md
+UncertaintyLens_项目方案书.docx
