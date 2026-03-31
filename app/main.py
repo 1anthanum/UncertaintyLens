@@ -4,13 +4,11 @@ UncertaintyLens — Streamlit interactive application.
 Upload a CSV or use sample data to get a full uncertainty analysis report.
 """
 
+from html import escape as html_escape
+
 import streamlit as st
 import pandas as pd
 import numpy as np
-import sys
-import os
-
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from uncertainty_lens.pipeline import UncertaintyPipeline
 from uncertainty_lens.quantifiers import MonteCarloQuantifier
@@ -154,41 +152,57 @@ with st.sidebar:
     )
 
     if data_source == "Upload CSV":
-        uploaded_file = st.file_uploader("Upload your CSV file", type=["csv"])
+        MAX_FILE_MB = 50
+        uploaded_file = st.file_uploader(
+            f"Upload your CSV file (max {MAX_FILE_MB} MB)", type=["csv"]
+        )
         if uploaded_file:
-            df = pd.read_csv(uploaded_file)
-            st.success(f"Loaded **{uploaded_file.name}** ({df.shape[0]:,} rows)")
+            file_size_mb = uploaded_file.size / (1024 * 1024)
+            if file_size_mb > MAX_FILE_MB:
+                st.error(f"File too large ({file_size_mb:.1f} MB). Maximum is {MAX_FILE_MB} MB.")
+                df = None
+            else:
+                try:
+                    df = pd.read_csv(uploaded_file)
+                    if df.empty:
+                        st.warning("The uploaded CSV is empty.")
+                        df = None
+                    else:
+                        st.success(f"Loaded **{uploaded_file.name}** ({df.shape[0]:,} rows, {df.shape[1]} columns)")
+                except Exception as e:
+                    st.error(f"Failed to parse CSV: {e}")
+                    df = None
         else:
             df = None
     else:
-        np.random.seed(42)
+        rng = np.random.default_rng(42)
         n = 1000
         df = pd.DataFrame(
             {
-                "channel": np.random.choice(
+                "channel": rng.choice(
                     ["Search Ads", "Social Media", "Video", "Feed", "Email"],
                     n,
                 ),
-                "impressions": np.random.lognormal(8, 1.5, n).astype(int),
+                "impressions": rng.lognormal(8, 1.5, n).astype(int),
                 "clicks": np.where(
-                    np.random.random(n) > 0.1,
-                    np.random.lognormal(5, 1.2, n).astype(int),
+                    rng.random(n) > 0.1,
+                    rng.lognormal(5, 1.2, n).astype(int),
                     np.nan,
                 ),
                 "conversions": np.where(
-                    np.random.random(n) > 0.25,
-                    np.random.poisson(10, n),
+                    rng.random(n) > 0.25,
+                    rng.poisson(10, n),
                     np.nan,
                 ),
                 "spend": np.concatenate(
                     [
-                        np.random.lognormal(6, 0.8, n - 30),
-                        np.random.lognormal(9, 0.5, 30),
+                        rng.lognormal(6, 0.8, n - 30),
+                        rng.lognormal(9, 0.5, 30),
                     ]
                 ),
                 "attributed_revenue": np.where(
-                    np.random.random(n) > 0.35,
-                    np.random.lognormal(7, 1.5, n),
+                    rng.random(n) > 0.35,
+                    rng.lognormal(7, 1.5, n),
                     np.nan,
                 ),
             }
@@ -214,15 +228,16 @@ with st.sidebar:
         w_anomaly = st.slider("Anomaly", 0.0, 1.0, 0.3, 0.05, format="%.2f")
         w_variance = st.slider("Variance", 0.0, 1.0, 0.3, 0.05, format="%.2f")
 
+        # Display normalized weights (actual normalization happens inside pipeline)
         total_w = w_missing + w_anomaly + w_variance
         if total_w > 0:
-            w_missing /= total_w
-            w_anomaly /= total_w
-            w_variance /= total_w
-
-        st.caption(
-            f"Normalized: missing={w_missing:.0%}, anomaly={w_anomaly:.0%}, variance={w_variance:.0%}"
-        )
+            st.caption(
+                f"Normalized: missing={w_missing / total_w:.0%}, "
+                f"anomaly={w_anomaly / total_w:.0%}, "
+                f"variance={w_variance / total_w:.0%}"
+            )
+        else:
+            st.warning("At least one weight must be greater than zero.")
 
 
 # ========== Main Content ==========
@@ -238,11 +253,17 @@ if df is not None:
         c4.metric("Missing Rate", f"{missing_pct:.1%}")
 
     # ----- Run Analysis -----
-    with st.spinner("Running uncertainty analysis..."):
-        pipeline = UncertaintyPipeline(
-            weights={"missing": w_missing, "anomaly": w_anomaly, "variance": w_variance}
+    @st.cache_data(show_spinner="Running uncertainty analysis...")
+    def _run_analysis(_df, _w_missing, _w_anomaly, _w_variance, _group_col):
+        pipe = UncertaintyPipeline(
+            weights={"missing": _w_missing, "anomaly": _w_anomaly, "variance": _w_variance}
         )
-        report = pipeline.analyze(df, group_col=group_col)
+        result = pipe.analyze(_df, group_col=_group_col)
+        # Drop non-serializable vote_matrix before caching
+        result["anomaly_analysis"].pop("vote_matrix", None)
+        return result
+
+    report = _run_analysis(df, w_missing, w_anomaly, w_variance, group_col)
 
     summary = report["summary"]
 
@@ -305,18 +326,26 @@ if df is not None:
     )
 
     missing_rows = int(df.isnull().any(axis=1).sum())
-    anomaly_count = sum(report["anomaly_analysis"].get("consensus_anomalies", {}).values())
-    high_var_count = sum(
+
+    # Estimate anomaly rows from consensus counts (max across features as upper bound)
+    consensus = report["anomaly_analysis"].get("consensus_anomalies", {})
+    anomaly_rows = max(consensus.values()) if consensus else 0
+
+    # Count high-variance features, estimate affected rows proportionally
+    cv_analysis = report["variance_analysis"].get("cv_analysis", {})
+    n_numeric = max(1, len(cv_analysis))
+    n_high_var_features = sum(
         1
-        for v in report["variance_analysis"].get("cv_analysis", {}).values()
+        for v in cv_analysis.values()
         if isinstance(v, dict) and v.get("is_high_variance", False)
-    ) * (df.shape[0] // 5)
+    )
+    high_var_rows = int(df.shape[0] * n_high_var_features / n_numeric)
 
     fig_sankey = create_info_loss_sankey(
         total_records=df.shape[0],
         missing_records=missing_rows,
-        anomaly_records=min(anomaly_count, df.shape[0] // 3),
-        high_variance_records=min(high_var_count, df.shape[0] // 4),
+        anomaly_records=anomaly_rows,
+        high_variance_records=high_var_rows,
         title="",
     )
     fig_sankey.update_layout(margin=dict(l=20, r=20, t=40, b=20), height=420)
@@ -325,7 +354,7 @@ if df is not None:
     # ===== Section 4: Group Analysis =====
     if group_col:
         st.markdown(
-            f'<p class="section-header">Group Analysis: {group_col}</p>',
+            f'<p class="section-header">Group Analysis: {html_escape(str(group_col))}</p>',
             unsafe_allow_html=True,
         )
         st.markdown(
@@ -410,7 +439,7 @@ if df is not None:
     st.markdown(
         '<div class="footer">'
         "Built with UncertaintyLens &bull; "
-        '<a href="https://github.com/1anthanum/UncertaintyLens" target="_blank">GitHub</a>'
+        '<a href="https://github.com/xuyangchen/UncertaintyLens" target="_blank">GitHub</a>'
         "</div>",
         unsafe_allow_html=True,
     )

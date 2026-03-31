@@ -247,9 +247,8 @@ class TestPipeline:
 
     def test_no_numeric_features(self, no_numeric_df):
         pipeline = UncertaintyPipeline()
-        report = pipeline.analyze(no_numeric_df)
-
-        assert report["summary"]["message"] == "No numeric features to analyze"
+        with pytest.raises(ValueError, match="no numeric columns"):
+            pipeline.analyze(no_numeric_df)
 
     def test_edge_case_data(self, edge_case_df):
         pipeline = UncertaintyPipeline()

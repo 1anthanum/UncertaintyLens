@@ -25,6 +25,11 @@ def create_confidence_plot(
 
     Wider confidence intervals = higher uncertainty.
     """
+    if value_col not in df.columns:
+        raise ValueError(f"value_col '{value_col}' not found in DataFrame")
+    if group_col not in df.columns:
+        raise ValueError(f"group_col '{group_col}' not found in DataFrame")
+
     groups = df[group_col].unique()
     means = []
     ci_lower = []
@@ -50,6 +55,14 @@ def create_confidence_plot(
     ci_widths = [u - l for u, l in zip(ci_upper, ci_lower)]
 
     fig = go.Figure()
+
+    if not group_names:
+        fig.add_annotation(
+            text="No groups with enough data (need ≥ 2 observations per group)",
+            xref="paper", yref="paper", x=0.5, y=0.5,
+            showarrow=False, font=dict(size=14, color="#64748b"),
+        )
+        return fig
 
     fig.add_trace(
         go.Scatter(
@@ -108,12 +121,18 @@ def create_distribution_comparison(
     - Density concentration regions
     - Tail behavior
     """
+    if value_col not in df.columns:
+        raise ValueError(f"value_col '{value_col}' not found in DataFrame")
+    if group_col not in df.columns:
+        raise ValueError(f"group_col '{group_col}' not found in DataFrame")
+
     groups = sorted(df[group_col].unique())
 
     fig = go.Figure()
 
     colors = px.colors.qualitative.Set2
 
+    traces_added = 0
     for i, group in enumerate(groups):
         data = df[df[group_col] == group][value_col].dropna()
         if len(data) < 5:
@@ -128,6 +147,14 @@ def create_distribution_comparison(
                 line_color=colors[i % len(colors)],
                 fillcolor=f"rgba{tuple(list(px.colors.hex_to_rgb(colors[i % len(colors)])) + [0.3])}",
             )
+        )
+        traces_added += 1
+
+    if traces_added == 0:
+        fig.add_annotation(
+            text="No groups with enough data (need ≥ 5 observations per group)",
+            xref="paper", yref="paper", x=0.5, y=0.5,
+            showarrow=False, font=dict(size=14, color="#64748b"),
         )
 
     if not title:

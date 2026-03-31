@@ -20,7 +20,6 @@ def create_info_loss_sankey(
         0,
         total_records - missing_records - anomaly_records - high_variance_records,
     )
-    clean_records = max(int(total_records * 0.3), clean_records)
 
     uncertain_total = total_records - clean_records
 

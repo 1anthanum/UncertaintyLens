@@ -6,6 +6,8 @@ to detect outliers. Outliers are treated as uncertainty signals rather than
 noise to be removed.
 """
 
+import warnings
+
 import pandas as pd
 import numpy as np
 from sklearn.ensemble import IsolationForest
@@ -30,10 +32,12 @@ class AnomalyDetector:
         iqr_factor: float = 1.5,
         contamination: float = 0.05,
         min_votes: int = 2,
+        random_state: int = 42,
     ):
         self.iqr_factor = iqr_factor
         self.contamination = contamination
         self.min_votes = min_votes
+        self.random_state = random_state
         self.results_ = None
 
     def analyze(self, df: pd.DataFrame) -> Dict[str, Any]:
@@ -103,7 +107,7 @@ class AnomalyDetector:
         try:
             iso = IsolationForest(
                 contamination=self.contamination,
-                random_state=42,
+                random_state=self.random_state,
                 n_estimators=100,
             )
             predictions = iso.fit_predict(df)
@@ -111,8 +115,8 @@ class AnomalyDetector:
 
             for col in df.columns:
                 flags[col] = is_anomaly
-        except Exception:
-            pass
+        except ValueError as e:
+            warnings.warn(f"Isolation Forest skipped: {e}")
 
         return flags
 
@@ -121,6 +125,9 @@ class AnomalyDetector:
 
         try:
             n_neighbors = min(20, df.shape[0] - 1)
+            if n_neighbors < 2:
+                return flags
+
             lof = LocalOutlierFactor(
                 n_neighbors=n_neighbors,
                 contamination=self.contamination,
@@ -130,8 +137,8 @@ class AnomalyDetector:
 
             for col in df.columns:
                 flags[col] = is_anomaly
-        except Exception:
-            pass
+        except ValueError as e:
+            warnings.warn(f"LOF skipped: {e}")
 
         return flags
 

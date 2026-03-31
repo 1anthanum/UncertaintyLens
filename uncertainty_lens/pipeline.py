@@ -33,11 +33,24 @@ class UncertaintyPipeline:
         anomaly_kwargs: Optional[Dict] = None,
         variance_kwargs: Optional[Dict] = None,
     ):
-        self.weights = weights or {
+        raw_weights = weights or {
             "missing": 0.4,
             "anomaly": 0.3,
             "variance": 0.3,
         }
+
+        # Validate and normalize weights
+        for key in ("missing", "anomaly", "variance"):
+            if key not in raw_weights:
+                raise ValueError(f"Missing required weight key: '{key}'")
+            if raw_weights[key] < 0:
+                raise ValueError(f"Weight '{key}' must be non-negative, got {raw_weights[key]}")
+
+        total = sum(raw_weights[k] for k in ("missing", "anomaly", "variance"))
+        if total == 0:
+            raise ValueError("At least one weight must be greater than zero")
+
+        self.weights = {k: raw_weights[k] / total for k in ("missing", "anomaly", "variance")}
 
         self.missing_detector = MissingPatternDetector(**(missing_kwargs or {}))
         self.anomaly_detector = AnomalyDetector(**(anomaly_kwargs or {}))
@@ -51,6 +64,15 @@ class UncertaintyPipeline:
         group_col: Optional[str] = None,
         time_col: Optional[str] = None,
     ) -> Dict[str, Any]:
+        if not isinstance(df, pd.DataFrame):
+            raise TypeError(f"Expected pandas DataFrame, got {type(df).__name__}")
+        if df.empty:
+            raise ValueError("DataFrame is empty — nothing to analyze")
+        if df.select_dtypes(include=[np.number]).columns.size == 0:
+            raise ValueError("DataFrame has no numeric columns — nothing to analyze")
+        if group_col is not None and group_col not in df.columns:
+            raise ValueError(f"group_col '{group_col}' not found in DataFrame columns")
+
         missing_results = self.missing_detector.analyze(df)
         anomaly_results = self.anomaly_detector.analyze(df)
         variance_results = self.variance_detector.analyze(

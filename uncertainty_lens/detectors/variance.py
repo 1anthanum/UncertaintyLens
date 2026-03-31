@@ -5,6 +5,8 @@ Identifies unexpectedly high or unexplainable variance regions in data,
 which represent key sources of decision uncertainty.
 """
 
+import warnings
+
 import pandas as pd
 import numpy as np
 from scipy import stats
@@ -32,6 +34,15 @@ class VarianceDetector:
         group_col: Optional[str] = None,
         time_col: Optional[str] = None,
     ) -> Dict[str, Any]:
+        if not isinstance(df, pd.DataFrame):
+            raise TypeError(f"Expected pandas DataFrame, got {type(df).__name__}")
+        if df.empty:
+            raise ValueError("DataFrame is empty — nothing to analyze")
+        if group_col is not None and group_col not in df.columns:
+            raise ValueError(f"group_col '{group_col}' not found in DataFrame columns")
+        if time_col is not None and time_col not in df.columns:
+            raise ValueError(f"time_col '{time_col}' not found in DataFrame columns")
+
         numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
 
         results = {
@@ -202,8 +213,8 @@ class VarianceDetector:
                     "window_variances": [round(v, 4) for v in windows],
                     "variance_trend": variance_trend,
                 }
-        except Exception:
-            pass
+        except (KeyError, TypeError) as e:
+            warnings.warn(f"Temporal variance analysis skipped: {e}")
 
         return temporal
 

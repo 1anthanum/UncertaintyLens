@@ -6,6 +6,8 @@ by repeatedly resampling the data with perturbations (missing value
 imputation variants, noise injection) and measuring the spread of results.
 """
 
+import warnings
+
 import pandas as pd
 import numpy as np
 from typing import Dict, Any, Optional, List, Callable
@@ -59,11 +61,19 @@ class MonteCarloQuantifier:
         dict with keys: point_estimate, mean, std, confidence_interval_95,
         confidence_interval_99, simulated_values, sensitivity_ratio.
         """
+        if not isinstance(df, pd.DataFrame):
+            raise TypeError(f"Expected pandas DataFrame, got {type(df).__name__}")
+        if df.empty:
+            raise ValueError("DataFrame is empty — nothing to simulate")
+        if not callable(statistic_fn):
+            raise TypeError("statistic_fn must be callable")
+
         if columns is None:
             columns = df.select_dtypes(include=[np.number]).columns.tolist()
 
         point_estimate = statistic_fn(df)
         simulated_values = []
+        n_failures = 0
 
         for _ in range(self.n_simulations):
             perturbed = self._perturb(df, columns)
@@ -71,8 +81,18 @@ class MonteCarloQuantifier:
                 value = statistic_fn(perturbed)
                 if np.isfinite(value):
                     simulated_values.append(float(value))
-            except Exception:
+                else:
+                    n_failures += 1
+            except (ValueError, TypeError, ZeroDivisionError):
+                n_failures += 1
                 continue
+
+        failure_rate = n_failures / self.n_simulations if self.n_simulations > 0 else 0
+        if failure_rate > 0.2:
+            warnings.warn(
+                f"Monte Carlo: {n_failures}/{self.n_simulations} simulations failed "
+                f"({failure_rate:.0%}). Results may be unreliable."
+            )
 
         if len(simulated_values) < 10:
             return {

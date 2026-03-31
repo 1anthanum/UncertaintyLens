@@ -27,6 +27,11 @@ class MissingPatternDetector:
         self.results_ = None
 
     def analyze(self, df: pd.DataFrame) -> Dict[str, Any]:
+        if not isinstance(df, pd.DataFrame):
+            raise TypeError(f"Expected pandas DataFrame, got {type(df).__name__}")
+        if df.empty:
+            raise ValueError("DataFrame is empty — nothing to analyze")
+
         results = {
             "summary": self._compute_summary(df),
             "missing_rates": self._compute_missing_rates(df),
