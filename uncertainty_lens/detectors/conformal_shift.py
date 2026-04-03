@@ -55,9 +55,7 @@ class ConformalShiftDetector:
         if not 0 < significance < 1:
             raise ValueError(f"significance must be in (0, 1), got {significance}")
         if not 0 < calibration_fraction < 1:
-            raise ValueError(
-                f"calibration_fraction must be in (0, 1), got {calibration_fraction}"
-            )
+            raise ValueError(f"calibration_fraction must be in (0, 1), got {calibration_fraction}")
         self.significance = significance
         self.calibration_fraction = calibration_fraction
         self.seed = seed
@@ -94,9 +92,7 @@ class ConformalShiftDetector:
         if df.empty:
             raise ValueError("DataFrame is empty — nothing to analyze")
         if group_col is not None and group_col not in df.columns:
-            raise ValueError(
-                f"group_col '{group_col}' not found in DataFrame columns"
-            )
+            raise ValueError(f"group_col '{group_col}' not found in DataFrame columns")
 
         numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
         if not numeric_cols:

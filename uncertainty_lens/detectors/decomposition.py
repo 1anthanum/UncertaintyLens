@@ -110,9 +110,7 @@ class UncertaintyDecomposer:
             for g, g_df in df.groupby(group_col):
                 g_numeric = [c for c in numeric_cols if c in g_df.columns]
                 if len(g_df) >= 5 and g_numeric:
-                    group_decomp[str(g)] = self._decompose_features(
-                        g_df, g_numeric, rng
-                    )
+                    group_decomp[str(g)] = self._decompose_features(g_df, g_numeric, rng)
 
         # ---- build uncertainty_scores and recommendations ----
         uncertainty_scores: Dict[str, float] = {}

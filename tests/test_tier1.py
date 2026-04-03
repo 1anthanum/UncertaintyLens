@@ -12,7 +12,6 @@ import pytest
 from uncertainty_lens.detectors import ConformalShiftDetector, UncertaintyDecomposer
 from uncertainty_lens.pipeline import UncertaintyPipeline
 
-
 # ========== Fixtures ==========
 
 
@@ -25,21 +24,27 @@ def grouped_df():
     # Group A: normal(100, 5) — standard
     # Group B: normal(100, 5) — same distribution (no shift)
     # Group C: normal(130, 20) — shifted mean AND spread
-    a = pd.DataFrame({
-        "value": rng.normal(100, 5, n_per_group),
-        "stable": rng.normal(50, 2, n_per_group),
-        "group": "A",
-    })
-    b = pd.DataFrame({
-        "value": rng.normal(100, 5, n_per_group),
-        "stable": rng.normal(50, 2, n_per_group),
-        "group": "B",
-    })
-    c = pd.DataFrame({
-        "value": rng.normal(130, 20, n_per_group),
-        "stable": rng.normal(50, 2, n_per_group),
-        "group": "C",
-    })
+    a = pd.DataFrame(
+        {
+            "value": rng.normal(100, 5, n_per_group),
+            "stable": rng.normal(50, 2, n_per_group),
+            "group": "A",
+        }
+    )
+    b = pd.DataFrame(
+        {
+            "value": rng.normal(100, 5, n_per_group),
+            "stable": rng.normal(50, 2, n_per_group),
+            "group": "B",
+        }
+    )
+    c = pd.DataFrame(
+        {
+            "value": rng.normal(130, 20, n_per_group),
+            "stable": rng.normal(50, 2, n_per_group),
+            "group": "C",
+        }
+    )
     return pd.concat([a, b, c], ignore_index=True)
 
 
@@ -47,31 +52,37 @@ def grouped_df():
 def noisy_df():
     """High-noise dataset (high aleatoric) with many samples (low epistemic)."""
     rng = np.random.default_rng(42)
-    return pd.DataFrame({
-        "noisy": rng.exponential(100, 2000),
-        "clean": rng.normal(50, 0.5, 2000),
-    })
+    return pd.DataFrame(
+        {
+            "noisy": rng.exponential(100, 2000),
+            "clean": rng.normal(50, 0.5, 2000),
+        }
+    )
 
 
 @pytest.fixture
 def small_df():
     """Small dataset (high epistemic uncertainty)."""
     rng = np.random.default_rng(42)
-    return pd.DataFrame({
-        "x": rng.normal(100, 10, 15),
-        "y": rng.normal(50, 5, 15),
-    })
+    return pd.DataFrame(
+        {
+            "x": rng.normal(100, 10, 15),
+            "y": rng.normal(50, 5, 15),
+        }
+    )
 
 
 @pytest.fixture
 def edge_df():
     """Edge-case dataset."""
-    return pd.DataFrame({
-        "constant": [42.0] * 100,
-        "all_nan": [np.nan] * 100,
-        "normal": np.random.default_rng(42).normal(0, 1, 100),
-        "group": (["X"] * 50) + (["Y"] * 50),
-    })
+    return pd.DataFrame(
+        {
+            "constant": [42.0] * 100,
+            "all_nan": [np.nan] * 100,
+            "normal": np.random.default_rng(42).normal(0, 1, 100),
+            "group": (["X"] * 50) + (["Y"] * 50),
+        }
+    )
 
 
 # ========== ConformalShiftDetector ==========
@@ -97,10 +108,12 @@ class TestConformalShiftDetector:
     def test_no_shift_detected(self):
         """All groups from same distribution — no shift expected."""
         rng = np.random.default_rng(42)
-        df = pd.DataFrame({
-            "x": rng.normal(0, 1, 600),
-            "group": (["A"] * 200) + (["B"] * 200) + (["C"] * 200),
-        })
+        df = pd.DataFrame(
+            {
+                "x": rng.normal(0, 1, 600),
+                "group": (["A"] * 200) + (["B"] * 200) + (["C"] * 200),
+            }
+        )
         detector = ConformalShiftDetector()
         results = detector.analyze(df, group_col="group")
 
@@ -130,9 +143,7 @@ class TestConformalShiftDetector:
         with pytest.raises(ValueError, match="empty"):
             detector.analyze(pd.DataFrame())
         with pytest.raises(ValueError, match="not found"):
-            detector.analyze(
-                pd.DataFrame({"x": [1, 2, 3]}), group_col="nonexistent"
-            )
+            detector.analyze(pd.DataFrame({"x": [1, 2, 3]}), group_col="nonexistent")
 
     def test_constructor_validation(self):
         with pytest.raises(ValueError):
@@ -142,10 +153,12 @@ class TestConformalShiftDetector:
 
     def test_small_groups(self):
         """Groups with < 3 observations should be handled gracefully."""
-        df = pd.DataFrame({
-            "x": [1.0, 2.0, 3.0, 100.0, 200.0],
-            "group": ["A", "A", "A", "B", "B"],
-        })
+        df = pd.DataFrame(
+            {
+                "x": [1.0, 2.0, 3.0, 100.0, 200.0],
+                "group": ["A", "A", "A", "B", "B"],
+            }
+        )
         detector = ConformalShiftDetector()
         results = detector.analyze(df, group_col="group")
 
@@ -314,6 +327,4 @@ class TestPipelineWithTier1:
         for col in report_old["uncertainty_index"]:
             old_score = report_old["uncertainty_index"][col]["composite_score"]
             new_score = report_new["uncertainty_index"][col]["composite_score"]
-            assert abs(old_score - new_score) < 0.01, (
-                f"{col}: old={old_score}, new={new_score}"
-            )
+            assert abs(old_score - new_score) < 0.01, f"{col}: old={old_score}, new={new_score}"
