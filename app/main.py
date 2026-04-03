@@ -168,7 +168,9 @@ with st.sidebar:
                         st.warning("The uploaded CSV is empty.")
                         df = None
                     else:
-                        st.success(f"Loaded **{uploaded_file.name}** ({df.shape[0]:,} rows, {df.shape[1]} columns)")
+                        st.success(
+                            f"Loaded **{uploaded_file.name}** ({df.shape[0]:,} rows, {df.shape[1]} columns)"
+                        )
                 except Exception as e:
                     st.error(f"Failed to parse CSV: {e}")
                     df = None
@@ -335,9 +337,7 @@ if df is not None:
     cv_analysis = report["variance_analysis"].get("cv_analysis", {})
     n_numeric = max(1, len(cv_analysis))
     n_high_var_features = sum(
-        1
-        for v in cv_analysis.values()
-        if isinstance(v, dict) and v.get("is_high_variance", False)
+        1 for v in cv_analysis.values() if isinstance(v, dict) and v.get("is_high_variance", False)
     )
     high_var_rows = int(df.shape[0] * n_high_var_features / n_numeric)
 

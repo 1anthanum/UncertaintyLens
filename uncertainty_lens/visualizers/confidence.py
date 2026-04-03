@@ -59,8 +59,12 @@ def create_confidence_plot(
     if not group_names:
         fig.add_annotation(
             text="No groups with enough data (need ≥ 2 observations per group)",
-            xref="paper", yref="paper", x=0.5, y=0.5,
-            showarrow=False, font=dict(size=14, color="#64748b"),
+            xref="paper",
+            yref="paper",
+            x=0.5,
+            y=0.5,
+            showarrow=False,
+            font=dict(size=14, color="#64748b"),
         )
         return fig
 
@@ -132,20 +136,30 @@ def create_distribution_comparison(
 
     colors = px.colors.qualitative.Set2
 
+    def _to_rgba(color_str: str, alpha: float = 0.3) -> str:
+        """Convert any Plotly color string (hex or rgb) to rgba."""
+        if color_str.startswith("#"):
+            rgb = px.colors.hex_to_rgb(color_str)
+            return f"rgba({rgb[0]}, {rgb[1]}, {rgb[2]}, {alpha})"
+        elif color_str.startswith("rgb("):
+            return color_str.replace("rgb(", "rgba(").replace(")", f", {alpha})")
+        return color_str
+
     traces_added = 0
     for i, group in enumerate(groups):
         data = df[df[group_col] == group][value_col].dropna()
         if len(data) < 5:
             continue
 
+        color = colors[i % len(colors)]
         fig.add_trace(
             go.Violin(
                 y=data,
                 name=str(group),
                 box_visible=True,
                 meanline_visible=True,
-                line_color=colors[i % len(colors)],
-                fillcolor=f"rgba{tuple(list(px.colors.hex_to_rgb(colors[i % len(colors)])) + [0.3])}",
+                line_color=color,
+                fillcolor=_to_rgba(color),
             )
         )
         traces_added += 1
@@ -153,8 +167,12 @@ def create_distribution_comparison(
     if traces_added == 0:
         fig.add_annotation(
             text="No groups with enough data (need ≥ 5 observations per group)",
-            xref="paper", yref="paper", x=0.5, y=0.5,
-            showarrow=False, font=dict(size=14, color="#64748b"),
+            xref="paper",
+            yref="paper",
+            x=0.5,
+            y=0.5,
+            showarrow=False,
+            font=dict(size=14, color="#64748b"),
         )
 
     if not title:

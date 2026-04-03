@@ -1,13 +1,33 @@
 """
 Unified analysis pipeline.
 
-Chains the three detectors together and outputs a comprehensive
-uncertainty analysis report.
+Chains detectors together and outputs a comprehensive uncertainty analysis
+report.  Supports both a simple constructor API (backward-compatible) and a
+``register()`` API for adding custom detectors at runtime.
+
+Backward-compatible usage (unchanged)::
+
+    pipeline = UncertaintyPipeline()
+    report = pipeline.analyze(df, group_col="channel")
+
+Extensible usage::
+
+    from my_detectors import DriftDetector
+
+    pipeline = UncertaintyPipeline()
+    pipeline.register("drift", DriftDetector(), weight=0.2)
+    report = pipeline.analyze(df)
+
+Custom detectors must satisfy the ``UncertaintyDetector`` protocol:
+
+    - An ``analyze(df, **kwargs)`` method that returns a ``dict``
+      containing at least an ``"uncertainty_scores"`` key mapping
+      column names to floats in [0, 1].
 """
 
 import pandas as pd
 import numpy as np
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, Protocol, runtime_checkable
 
 from uncertainty_lens.detectors import (
     MissingPatternDetector,
@@ -15,16 +35,57 @@ from uncertainty_lens.detectors import (
     VarianceDetector,
 )
 
+# ---------------------------------------------------------------------------
+# Detector protocol – any object with this shape can be registered
+# ---------------------------------------------------------------------------
+
+
+@runtime_checkable
+class UncertaintyDetector(Protocol):
+    """
+    Structural typing protocol for uncertainty detectors.
+
+    Any class that implements ``analyze(df, **kwargs) -> dict`` with an
+    ``"uncertainty_scores"`` key in the return value satisfies this protocol.
+    You do **not** need to inherit from this class.
+    """
+
+    def analyze(self, df: pd.DataFrame, **kwargs: Any) -> Dict[str, Any]: ...
+
+
+# ---------------------------------------------------------------------------
+# Pipeline
+# ---------------------------------------------------------------------------
+
 
 class UncertaintyPipeline:
     """
     Uncertainty analysis pipeline.
 
-    Usage:
+    Parameters
+    ----------
+    weights : dict, optional
+        Mapping of ``{"missing": float, "anomaly": float, "variance": float}``.
+        Values are normalized internally so they sum to 1.  Negative values
+        raise ``ValueError``.
+    missing_kwargs, anomaly_kwargs, variance_kwargs : dict, optional
+        Extra keyword arguments forwarded to the built-in detectors.
+
+    Examples
+    --------
+    Basic (backward-compatible)::
+
         pipeline = UncertaintyPipeline()
         report = pipeline.analyze(df, group_col="channel")
-        print(report["uncertainty_index"])
+
+    With custom detector::
+
+        pipeline = UncertaintyPipeline()
+        pipeline.register("drift", DriftDetector(), weight=0.2)
+        report = pipeline.analyze(df)
     """
+
+    # ── constructor ────────────────────────────────────────────────────
 
     def __init__(
         self,
@@ -33,13 +94,17 @@ class UncertaintyPipeline:
         anomaly_kwargs: Optional[Dict] = None,
         variance_kwargs: Optional[Dict] = None,
     ):
+        # ----- registry: ordered dict of {name: (detector, weight)} -----
+        self._registry: Dict[str, dict] = {}
+
+        # Register the three built-in detectors
         raw_weights = weights or {
             "missing": 0.4,
             "anomaly": 0.3,
             "variance": 0.3,
         }
 
-        # Validate and normalize weights
+        # Validate required keys for built-in detectors
         for key in ("missing", "anomaly", "variance"):
             if key not in raw_weights:
                 raise ValueError(f"Missing required weight key: '{key}'")
@@ -50,13 +115,103 @@ class UncertaintyPipeline:
         if total == 0:
             raise ValueError("At least one weight must be greater than zero")
 
-        self.weights = {k: raw_weights[k] / total for k in ("missing", "anomaly", "variance")}
+        # Store *raw* weights; normalization happens in analyze()
+        self._registry["missing"] = {
+            "detector": MissingPatternDetector(**(missing_kwargs or {})),
+            "weight": raw_weights["missing"],
+        }
+        self._registry["anomaly"] = {
+            "detector": AnomalyDetector(**(anomaly_kwargs or {})),
+            "weight": raw_weights["anomaly"],
+        }
+        self._registry["variance"] = {
+            "detector": VarianceDetector(**(variance_kwargs or {})),
+            "weight": raw_weights["variance"],
+        }
 
-        self.missing_detector = MissingPatternDetector(**(missing_kwargs or {}))
-        self.anomaly_detector = AnomalyDetector(**(anomaly_kwargs or {}))
-        self.variance_detector = VarianceDetector(**(variance_kwargs or {}))
+        self.report_: Optional[Dict[str, Any]] = None
 
-        self.report_ = None
+    # ── backward-compatible weight property ────────────────────────────
+
+    @property
+    def weights(self) -> Dict[str, float]:
+        """Return normalized weights for all registered detectors."""
+        raw = {name: entry["weight"] for name, entry in self._registry.items()}
+        total = sum(raw.values())
+        if total == 0:
+            return raw
+        return {k: v / total for k, v in raw.items()}
+
+    # ── registration API ───────────────────────────────────────────────
+
+    def register(
+        self,
+        name: str,
+        detector: Any,
+        weight: float = 0.2,
+    ) -> "UncertaintyPipeline":
+        """
+        Register a custom detector.
+
+        Parameters
+        ----------
+        name : str
+            Unique name for this detector (e.g. ``"drift"``).  If the name
+            already exists the registration is **replaced** (useful for
+            swapping built-in detectors with custom implementations).
+        detector : UncertaintyDetector
+            Any object with an ``analyze(df, **kwargs)`` method that returns
+            a dict containing an ``"uncertainty_scores"`` key.
+        weight : float
+            Relative weight in the composite score (default 0.2).
+            Must be non-negative.
+
+        Returns
+        -------
+        self
+            For method chaining.
+
+        Raises
+        ------
+        TypeError
+            If `detector` does not have an ``analyze`` method.
+        ValueError
+            If `weight` is negative.
+        """
+        if not hasattr(detector, "analyze") or not callable(detector.analyze):
+            raise TypeError(
+                f"Detector '{name}' must have a callable `analyze` method. "
+                f"Got {type(detector).__name__}."
+            )
+        if weight < 0:
+            raise ValueError(f"Weight for '{name}' must be non-negative, got {weight}")
+
+        self._registry[name] = {"detector": detector, "weight": weight}
+        return self
+
+    def unregister(self, name: str) -> "UncertaintyPipeline":
+        """
+        Remove a registered detector by name.
+
+        Raises ``KeyError`` if the name is not registered.
+        """
+        if name not in self._registry:
+            raise KeyError(
+                f"No detector registered under '{name}'. "
+                f"Registered: {list(self._registry.keys())}"
+            )
+        del self._registry[name]
+        return self
+
+    @property
+    def registered_detectors(self) -> list:
+        """Return a list of ``(name, detector_class, weight)`` tuples."""
+        return [
+            (name, type(entry["detector"]).__name__, entry["weight"])
+            for name, entry in self._registry.items()
+        ]
+
+    # ── core analysis ──────────────────────────────────────────────────
 
     def analyze(
         self,
@@ -64,6 +219,24 @@ class UncertaintyPipeline:
         group_col: Optional[str] = None,
         time_col: Optional[str] = None,
     ) -> Dict[str, Any]:
+        """
+        Run all registered detectors and produce a unified report.
+
+        Parameters
+        ----------
+        df : pd.DataFrame
+        group_col : str, optional
+            Grouping column (passed to detectors that accept it).
+        time_col : str, optional
+            Time column (passed to detectors that accept it).
+
+        Returns
+        -------
+        dict
+            Keys: ``"uncertainty_index"``, ``"summary"``, and one
+            ``"<name>_analysis"`` entry per registered detector.
+        """
+        # ---- input validation ----
         if not isinstance(df, pd.DataFrame):
             raise TypeError(f"Expected pandas DataFrame, got {type(df).__name__}")
         if df.empty:
@@ -73,33 +246,59 @@ class UncertaintyPipeline:
         if group_col is not None and group_col not in df.columns:
             raise ValueError(f"group_col '{group_col}' not found in DataFrame columns")
 
-        missing_results = self.missing_detector.analyze(df)
-        anomaly_results = self.anomaly_detector.analyze(df)
-        variance_results = self.variance_detector.analyze(
-            df, group_col=group_col, time_col=time_col
-        )
+        if not self._registry:
+            raise ValueError("No detectors registered — call register() first")
 
+        # ---- run each detector ----
+        analysis_results: Dict[str, Dict[str, Any]] = {}
+        extra_kwargs: Dict[str, Any] = {}
+        if group_col is not None:
+            extra_kwargs["group_col"] = group_col
+        if time_col is not None:
+            extra_kwargs["time_col"] = time_col
+
+        for name, entry in self._registry.items():
+            detector = entry["detector"]
+
+            # Pass only kwargs the detector's analyze() actually accepts
+            # (avoids TypeError for detectors that don't take group_col)
+            import inspect
+
+            sig = inspect.signature(detector.analyze)
+            params = sig.parameters
+
+            call_kwargs: Dict[str, Any] = {}
+            for k, v in extra_kwargs.items():
+                if k in params or any(
+                    p.kind == inspect.Parameter.VAR_KEYWORD for p in params.values()
+                ):
+                    call_kwargs[k] = v
+
+            result = detector.analyze(df, **call_kwargs)
+            analysis_results[name] = result
+
+        # ---- build composite uncertainty index ----
         numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
-        uncertainty_index = {}
+        normalized_weights = self.weights  # already normalized via property
+        uncertainty_index: Dict[str, Dict[str, Any]] = {}
 
         for col in numeric_cols:
-            m_score = missing_results["uncertainty_scores"].get(col, 0)
-            a_score = anomaly_results["uncertainty_scores"].get(col, 0)
-            v_score = variance_results["uncertainty_scores"].get(col, 0)
+            scores: Dict[str, float] = {}
+            composite = 0.0
 
-            composite = (
-                self.weights["missing"] * m_score
-                + self.weights["anomaly"] * a_score
-                + self.weights["variance"] * v_score
-            )
-            uncertainty_index[col] = {
+            for name, result in analysis_results.items():
+                score = result.get("uncertainty_scores", {}).get(col, 0.0)
+                scores[f"{name}_score"] = score
+                composite += normalized_weights[name] * score
+
+            entry = {
                 "composite_score": round(float(composite), 4),
-                "missing_score": m_score,
-                "anomaly_score": a_score,
-                "variance_score": v_score,
+                **scores,
                 "level": self._score_to_level(composite),
             }
+            uncertainty_index[col] = entry
 
+        # Sort high → low
         uncertainty_index = dict(
             sorted(
                 uncertainty_index.items(),
@@ -108,16 +307,20 @@ class UncertaintyPipeline:
             )
         )
 
-        report = {
+        # ---- assemble report ----
+        report: Dict[str, Any] = {
             "uncertainty_index": uncertainty_index,
-            "missing_analysis": missing_results,
-            "anomaly_analysis": anomaly_results,
-            "variance_analysis": variance_results,
             "summary": self._generate_summary(uncertainty_index, df),
         }
 
+        # Each detector gets a "<name>_analysis" key
+        for name, result in analysis_results.items():
+            report[f"{name}_analysis"] = result
+
         self.report_ = report
         return report
+
+    # ── helpers ─────────────────────────────────────────────────────────
 
     def _score_to_level(self, score: float) -> str:
         if score < 0.2:
