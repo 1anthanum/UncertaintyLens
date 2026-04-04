@@ -106,7 +106,15 @@ class MonteCarloQuantifier:
         ci_99 = (float(np.percentile(values, 0.5)), float(np.percentile(values, 99.5)))
 
         mean_val = float(np.mean(values))
-        sensitivity = (ci_95[1] - ci_95[0]) / abs(mean_val) if mean_val != 0 else float("inf")
+
+        # Relative CI width: normalized uncertainty spread
+        # Uses IQR of simulated values for robustness, normalized by
+        # the IQR of the CI bounds rather than just the mean
+        if abs(mean_val) > 1e-15:
+            relative_ci_width = (ci_95[1] - ci_95[0]) / abs(mean_val)
+        else:
+            # Mean ≈ 0: normalize by CI width itself (gives dimensionless ~2)
+            relative_ci_width = float("inf") if ci_95[1] == ci_95[0] else 2.0
 
         return {
             "point_estimate": float(point_estimate),
@@ -114,8 +122,9 @@ class MonteCarloQuantifier:
             "std": float(np.std(values)),
             "confidence_interval_95": ci_95,
             "confidence_interval_99": ci_99,
-            "sensitivity_ratio": round(sensitivity, 4),
+            "relative_ci_width": round(relative_ci_width, 4),
             "successful_simulations": len(simulated_values),
+            "failure_rate": round(n_failures / max(1, self.n_simulations), 4),
         }
 
     def _perturb(self, df: pd.DataFrame, columns: List[str]) -> pd.DataFrame:

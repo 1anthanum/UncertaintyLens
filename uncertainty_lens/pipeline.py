@@ -284,12 +284,31 @@ class UncertaintyPipeline:
 
         for col in numeric_cols:
             scores: Dict[str, float] = {}
-            composite = 0.0
+            active_weights: Dict[str, float] = {}
 
             for name, result in analysis_results.items():
                 score = result.get("uncertainty_scores", {}).get(col, 0.0)
                 scores[f"{name}_score"] = score
-                composite += normalized_weights[name] * score
+                # Adaptive weighting: detectors that returned score=0
+                # (e.g. missing detector on clean data) get reduced weight
+                # to avoid diluting the composite with uninformative zeros.
+                raw_w = normalized_weights[name]
+                if score > 0:
+                    active_weights[name] = raw_w
+                else:
+                    # Zero-score detectors keep 10% weight
+                    # (they confirm low risk, not zero information)
+                    active_weights[name] = raw_w * 0.1
+
+            # Re-normalize active weights
+            total_active = sum(active_weights.values())
+            if total_active > 0:
+                composite = sum(
+                    (active_weights[name] / total_active) * scores[f"{name}_score"]
+                    for name in active_weights
+                )
+            else:
+                composite = 0.0
 
             entry = {
                 "composite_score": round(float(composite), 4),

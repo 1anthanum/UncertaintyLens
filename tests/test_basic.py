@@ -285,12 +285,12 @@ class TestMonteCarloQuantifier:
         ci = result["confidence_interval_95"]
         assert ci[1] > ci[0]
 
-    def test_sensitivity_ratio(self, sample_df):
+    def test_relative_ci_width(self, sample_df):
         quantifier = MonteCarloQuantifier(n_simulations=100)
         result = quantifier.estimate(sample_df, statistic_fn=lambda d: d["clean_feature"].mean())
 
-        # Clean feature should have low sensitivity
-        assert result["sensitivity_ratio"] < 1.0
+        # Clean feature should have narrow CI relative to mean
+        assert result["relative_ci_width"] < 1.0
 
     def test_small_dataset(self, tiny_df):
         quantifier = MonteCarloQuantifier(n_simulations=50)

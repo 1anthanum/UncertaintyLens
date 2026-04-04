@@ -78,7 +78,7 @@ class TestConformalPredictor:
 
         cr = results["conformal_results"]["target"]
         # Empirical coverage should be close to target
-        assert cr["empirical_coverage"] >= 0.8  # allow some slack
+        assert cr["empirical_coverage_cal"] >= 0.8  # allow some slack
 
         # Interval width should be positive
         assert cr["interval_width"] > 0
@@ -126,7 +126,7 @@ class TestConformalPredictor:
         detector = ConformalPredictor(model=model, target_col="target", coverage=0.9)
         results = detector.analyze(regression_df)
 
-        assert results["conformal_results"]["target"]["empirical_coverage"] >= 0.8
+        assert results["conformal_results"]["target"]["empirical_coverage_cal"] >= 0.8
 
     def test_input_validation(self):
         detector = ConformalPredictor()

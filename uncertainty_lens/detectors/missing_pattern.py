@@ -85,17 +85,19 @@ class MissingPatternDetector:
 
     def _test_mcar(self, df: pd.DataFrame) -> Dict[str, Any]:
         """
-        Simplified MCAR test.
+        MCAR test with Bonferroni multiple-testing correction.
 
         If data is MCAR, rows with missing values and rows without should show
-        no significant distributional differences on other features (t-test).
+        no significant distributional differences on other features (Welch t-test).
+
+        Uses Bonferroni correction: reject MCAR only if any p-value < α/n_tests,
+        which controls the family-wise error rate.
         """
         numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
         if len(numeric_cols) < 2:
             return {"is_mcar": True, "p_values": {}, "note": "Not enough features to test"}
 
         p_values = {}
-        non_random_count = 0
 
         for target_col in numeric_cols:
             if df[target_col].isna().sum() == 0:
@@ -119,21 +121,31 @@ class MissingPatternDetector:
                 key = f"{target_col}_vs_{other_col}"
                 p_values[key] = round(float(p_val), 4)
 
-                if p_val < self.significance_level:
-                    non_random_count += 1
-
         total_tests = len(p_values)
-        is_mcar = non_random_count < max(1, total_tests * 0.1)
+
+        # Bonferroni correction: adjusted significance = α / n_tests
+        if total_tests > 0:
+            adjusted_alpha = self.significance_level / total_tests
+            non_random_count = sum(1 for p in p_values.values() if p < adjusted_alpha)
+        else:
+            adjusted_alpha = self.significance_level
+            non_random_count = 0
+
+        # Reject MCAR if ANY test is significant after correction
+        is_mcar = non_random_count == 0
 
         return {
             "is_mcar": is_mcar,
             "non_random_pairs": non_random_count,
             "total_tests": total_tests,
+            "adjusted_alpha": round(adjusted_alpha, 6),
+            "correction_method": "bonferroni",
             "p_values": p_values,
             "interpretation": (
                 "Missing pattern is approximately MCAR — uncertainty is relatively manageable"
                 if is_mcar
-                else "Missing pattern is non-random (MAR/MNAR) — systematic information loss detected"
+                else f"Missing pattern is non-random (MAR/MNAR) — {non_random_count} test(s) "
+                f"significant after Bonferroni correction (α={adjusted_alpha:.4f})"
             ),
         }
 
@@ -141,15 +153,16 @@ class MissingPatternDetector:
         """
         Compute per-feature missing-uncertainty score (0–1).
 
-        Sigmoid mapping: <5% missing ~ 0, 5–20% ramps up, >20% ~ 1.
-        Non-random missingness adds a 30% penalty.
+        Sigmoid mapping: <5% missing → ~0, 15% → ~0.5, >30% → ~1.
+        Non-random (MAR/MNAR) missingness shifts the inflection point
+        leftward, making lower missing rates score higher, because
+        systematic missingness carries more information loss than random.
         """
-        base_score = 1 / (1 + np.exp(-20 * (missing_rate - 0.15)))
-
         if not is_random and missing_rate > 0:
-            penalty = 1.3
+            # Non-random: inflection at 8% missing (more conservative)
+            base_score = 1 / (1 + np.exp(-20 * (missing_rate - 0.08)))
         else:
-            penalty = 1.0
+            # MCAR: inflection at 15% missing
+            base_score = 1 / (1 + np.exp(-20 * (missing_rate - 0.15)))
 
-        score = min(1.0, base_score * penalty)
-        return round(float(score), 4)
+        return round(float(min(1.0, base_score)), 4)

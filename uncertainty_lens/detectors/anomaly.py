@@ -148,9 +148,17 @@ class AnomalyDetector:
         vote_distribution: Dict,
         n_rows: int,
     ) -> float:
+        # Sigmoid: anomaly_rate = 8% → score ≈ 0.5
+        # Steepness 30: sharp transition (anomaly rates are typically small)
         base_score = 1 / (1 + np.exp(-30 * (anomaly_rate - 0.08)))
 
-        sample_penalty = 1.0 if n_rows >= 100 else 1.0 + (100 - n_rows) / 200
+        # Small-sample penalty: anomaly detection is less reliable with
+        # fewer observations.  log-scaling provides diminishing penalty.
+        # n=100 → penalty=1.0, n=50 → ~1.15, n=20 → ~1.35
+        if n_rows >= 100:
+            sample_penalty = 1.0
+        else:
+            sample_penalty = 1.0 + 0.5 * np.log(100 / max(n_rows, 10)) / np.log(10)
 
         score = min(1.0, base_score * sample_penalty)
         return round(float(score), 4)

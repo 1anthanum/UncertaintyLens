@@ -204,31 +204,55 @@ class UncertaintyDecomposer:
                 idx = rng.choice(len(series), size=len(series), replace=True)
                 resample = series[idx]
                 boot_statistics[b] = stat_fn(resample)
-                boot_internal_vars[b] = np.var(resample, ddof=1)
+                # Use ddof=0 consistently: within each resample we estimate
+                # the full population variance (not a sample from it)
+                boot_internal_vars[b] = np.var(resample, ddof=0)
 
             # Raw components
-            epistemic_raw = float(np.var(boot_statistics, ddof=1))
+            # Epistemic: variance of the bootstrap statistics (ddof=0 for
+            # consistency — this is the full set of bootstrap estimates)
+            epistemic_raw = float(np.var(boot_statistics, ddof=0))
             aleatoric_raw = float(np.mean(boot_internal_vars))
 
-            # Normalize to [0, 1] via calibrated sigmoids
-            # Epistemic: ratio of bootstrap-statistic-std to population std
-            pop_std = float(np.std(series, ddof=1)) if len(series) > 1 else 1.0
-            if pop_std == 0:
-                pop_std = 1.0
+            # Normalize BOTH to the same scale: population variance
+            # This makes epi_ratio and ale_ratio directly comparable
+            pop_var = float(np.var(series, ddof=0)) if len(series) > 1 else 1.0
+            if pop_var == 0:
+                pop_var = 1.0
+            pop_std = np.sqrt(pop_var)
 
+            # Epistemic ratio: √(var of bootstrap stats) / pop_std
+            # Theoretical value for well-sampled mean: 1/√n
             epi_ratio = np.sqrt(epistemic_raw) / pop_std
-            # For a well-sampled dataset, epi_ratio ≈ 1/√n (small).
-            # Threshold: if epi_ratio > 0.1, epistemic is getting significant.
+
+            # Aleatoric ratio: √(mean internal var) / pop_std
+            # For well-behaved data, this should be ≈ 1.0
+            # (bootstrap internal variance ≈ population variance)
+            ale_ratio = np.sqrt(aleatoric_raw) / pop_std
+
+            # Sigmoid scoring — both use the same normalization basis
+            # Epistemic: inflection at 1/√n = 0.1 (≈ n=100 baseline)
+            #   steepness 20: transitions over ~0.05-0.15 range
             epi_score = float(1.0 / (1.0 + np.exp(-20 * (epi_ratio - 0.1))))
 
-            ale_ratio = np.sqrt(aleatoric_raw) / (abs(float(np.mean(series))) + 1e-10)
-            # This is essentially the CV; use same sigmoid as variance detector
-            ale_score = float(1.0 / (1.0 + np.exp(-5 * (ale_ratio - 0.5))))
+            # Aleatoric: inflection at 1.0 (internal var = pop var, normal)
+            #   steepness 3: gradual transition; high only when truly noisy
+            ale_score = float(1.0 / (1.0 + np.exp(-3 * (ale_ratio - 1.0))))
 
-            # Determine dominant component
-            if epi_score > ale_score * 1.5:
+            # Determine dominant component using a statistically motivated
+            # threshold: one component is "dominant" if it contributes >2x
+            # the other to total uncertainty
+            if epi_score > 0.01 and ale_score > 0.01:
+                ratio = epi_score / ale_score
+                if ratio > 2.0:
+                    dominant = "epistemic"
+                elif ratio < 0.5:
+                    dominant = "aleatoric"
+                else:
+                    dominant = "mixed"
+            elif epi_score > ale_score:
                 dominant = "epistemic"
-            elif ale_score > epi_score * 1.5:
+            elif ale_score > epi_score:
                 dominant = "aleatoric"
             else:
                 dominant = "mixed"

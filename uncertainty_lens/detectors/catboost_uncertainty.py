@@ -208,14 +208,15 @@ class CatBoostUncertainty:
             warnings.simplefilter("ignore")
             model.fit(X_train, y_train)
 
-        # Predict returns [mean, variance] for RMSEWithUncertainty
+        # Predict returns [mean, variance_or_log_variance] for RMSEWithUncertainty
         preds_cal = model.predict(X_cal)
         pred_means_cal = preds_cal[:, 0]
-        pred_vars_cal = preds_cal[:, 1]
+        raw_vars_cal = preds_cal[:, 1]
 
-        # Variance estimates from CatBoost can be in log-space
-        # RMSEWithUncertainty outputs log(variance), so exponentiate
-        pred_vars_cal = np.exp(pred_vars_cal)
+        # CatBoost RMSEWithUncertainty outputs log(variance).
+        # Verify: if raw values are mostly negative, they're log-space;
+        # if mostly positive and large, they may already be variance.
+        pred_vars_cal = self._safe_exp_variance(raw_vars_cal, "calibration")
 
         # Empirical check: residuals vs predicted variance
         residuals = np.abs(y_cal - pred_means_cal)
@@ -224,21 +225,22 @@ class CatBoostUncertainty:
         # Full-dataset prediction
         X_full = df[feature_cols]
         preds_full = model.predict(X_full)
-        pred_vars_full = np.exp(preds_full[:, 1])
+        pred_vars_full = self._safe_exp_variance(preds_full[:, 1], "full")
 
         # Mean predicted variance → measure of aleatoric uncertainty
         mean_var = float(np.mean(pred_vars_full))
         median_var = float(np.median(pred_vars_full))
 
-        # Normalize: variance relative to target range squared
+        # Normalize: predicted std relative to target IQR (robust to outliers)
+        target_iqr = float(np.percentile(df[target_col], 75) - np.percentile(df[target_col], 25))
         target_range = float(df[target_col].max() - df[target_col].min())
-        if target_range > 0:
-            normalized_std = np.sqrt(mean_var) / target_range
-        else:
-            normalized_std = 0.0
+        normalizer = target_iqr if target_iqr > 0 else (target_range if target_range > 0 else 1.0)
+        normalized_std = np.sqrt(mean_var) / normalizer
 
-        # Sigmoid: normalized_std = 0.2 → ~0.5
-        score = float(1.0 / (1.0 + np.exp(-10 * (normalized_std - 0.2))))
+        # Score mapping: calibrated sigmoid
+        # Inflection: normalized_std = 0.5 (predicted std = half of IQR) → score ≈ 0.5
+        # Steepness: 4.0 (moderate)
+        score = float(1.0 / (1.0 + np.exp(-4.0 * (normalized_std - 0.5))))
 
         return {
             "mean_predicted_variance": round(mean_var, 4),
@@ -254,3 +256,36 @@ class CatBoostUncertainty:
                 4,
             ),
         }
+
+    @staticmethod
+    def _safe_exp_variance(raw_values: np.ndarray, label: str = "") -> np.ndarray:
+        """
+        Safely convert CatBoost's raw variance output to actual variance.
+
+        CatBoost RMSEWithUncertainty outputs log(variance). We exponentiate,
+        but add sanity checks for cases where the output format changes.
+        """
+        # Heuristic: if most values are > 10, they're likely already variance
+        # (log(var) > 10 implies var > 22026, which is uncommon)
+        if np.median(raw_values) > 10:
+            warnings.warn(
+                f"CatBoost {label} variance outputs have high median "
+                f"({np.median(raw_values):.1f}); they may already be in "
+                f"variance space rather than log-variance. Using raw values.",
+                UserWarning,
+            )
+            return np.maximum(raw_values, 0)
+
+        # Standard path: exponentiate from log-space
+        # Clamp to avoid overflow: exp(88) ≈ 1.65e38 (near float64 max)
+        clamped = np.clip(raw_values, -50, 80)
+        result = np.exp(clamped)
+
+        if np.any(result > 1e10):
+            warnings.warn(
+                f"CatBoost {label}: very large predicted variances detected "
+                f"(max={np.max(result):.2e}). Results may be unreliable.",
+                UserWarning,
+            )
+
+        return result

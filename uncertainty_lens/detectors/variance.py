@@ -62,16 +62,21 @@ class VarianceDetector:
             )
 
         for col in numeric_cols:
-            cv = results["cv_analysis"].get(col, {}).get("cv", 0)
+            cv_info = results["cv_analysis"].get(col, {})
+            cv = cv_info.get("cv", 0)
+            cv_method = cv_info.get("cv_method", "standard")
             unexplained_ratio = 1.0
 
             if "variance_decomposition" in results and col in results["variance_decomposition"]:
-                unexplained_ratio = results["variance_decomposition"][col].get(
-                    "within_group_ratio", 1.0
-                )
+                decomp_entry = results["variance_decomposition"][col]
+                ratio = decomp_entry.get("within_group_ratio", 1.0)
+                # Handle NaN from constant-feature decomposition
+                if isinstance(ratio, float) and np.isnan(ratio):
+                    ratio = 0.0  # constant feature → no unexplained variance
+                unexplained_ratio = ratio
 
             results["uncertainty_scores"][col] = self._compute_uncertainty_score(
-                cv=cv, unexplained_ratio=unexplained_ratio
+                cv=cv, unexplained_ratio=unexplained_ratio, cv_method=cv_method
             )
 
         self.results_ = results
@@ -103,17 +108,61 @@ class VarianceDetector:
         CV is dimensionless, enabling cross-feature comparison.
         CV > 0.5 typically indicates high dispersion.
         CV > 1.0 means std exceeds the mean — extremely unstable data.
+
+        For features where mean ≈ 0, CV is undefined.  We fall back to
+        standard deviation directly, normalized against a reference scale
+        (median absolute value of all non-zero features), and flag the
+        result as ``"cv_method": "std_fallback"``.
         """
         cv_dict = {}
         for col in cols:
             series = df[col].dropna()
-            mean = series.mean()
 
-            if mean == 0 or len(series) < 2:
-                cv_dict[col] = {"cv": float("inf"), "level": "N/A"}
+            if len(series) < 2:
+                cv_dict[col] = {
+                    "cv": float("inf"),
+                    "level": "N/A",
+                    "cv_method": "insufficient_data",
+                }
                 continue
 
-            cv = float(series.std() / abs(mean))
+            mean = float(series.mean())
+            std = float(series.std())
+
+            # Near-zero mean: CV is numerically unstable when |mean| << std.
+            # Threshold: |mean| < 0.1 * std means CV > 10, which is
+            # unreliable and dominated by the sign of the mean.
+            if (std > 0 and abs(mean) < 0.1 * std) or abs(mean) < 1e-15:
+                # Use std directly; classify based on absolute spread
+                # relative to median absolute deviation of the series
+                mad = float(np.median(np.abs(series - series.median())))
+                if mad == 0:
+                    mad = std if std > 0 else 1.0
+
+                # Effective dispersion: std / MAD (scale-free)
+                effective_cv = std / mad if mad > 0 else 0.0
+                # MAD ≈ 0.6745 * std for normal data, so std/MAD ≈ 1.48
+                # Use 1.5 as the "normal" baseline
+                level = (
+                    "low"
+                    if effective_cv < 0.75
+                    else (
+                        "medium"
+                        if effective_cv < 1.5
+                        else "high" if effective_cv < 3.0 else "very high"
+                    )
+                )
+
+                cv_dict[col] = {
+                    "cv": round(effective_cv, 4),
+                    "level": level,
+                    "is_high_variance": effective_cv > self.cv_threshold * 3,  # adjusted threshold
+                    "cv_method": "std_fallback",
+                    "note": "Mean ≈ 0; using std/MAD as dispersion proxy",
+                }
+                continue
+
+            cv = std / abs(mean)
             level = (
                 "low" if cv < 0.2 else "medium" if cv < 0.5 else "high" if cv < 1.0 else "very high"
             )
@@ -122,6 +171,7 @@ class VarianceDetector:
                 "cv": round(cv, 4),
                 "level": level,
                 "is_high_variance": cv > self.cv_threshold,
+                "cv_method": "standard",
             }
         return cv_dict
 
@@ -146,8 +196,9 @@ class VarianceDetector:
             if total_var == 0:
                 decomp[col] = {
                     "total_variance": 0,
-                    "between_group_ratio": 0,
-                    "within_group_ratio": 0,
+                    "between_group_ratio": float("nan"),
+                    "within_group_ratio": float("nan"),
+                    "note": "Constant feature — variance decomposition undefined",
                 }
                 continue
 
@@ -203,25 +254,48 @@ class VarianceDetector:
                     window_var = float(series.iloc[start:end].var())
                     windows.append(window_var)
 
+                # Determine trend using Spearman rank correlation of
+                # window index vs. variance (non-parametric monotonic trend)
+                from scipy.stats import spearmanr
+
                 variance_trend = "stable"
-                if windows[-1] > windows[0] * 1.5:
-                    variance_trend = "increasing"
-                elif windows[-1] < windows[0] * 0.5:
-                    variance_trend = "decreasing"
+                if len(windows) >= 3:
+                    rho, p_val = spearmanr(range(len(windows)), windows)
+                    if p_val < 0.1:  # loose threshold for only 4 windows
+                        variance_trend = "increasing" if rho > 0 else "decreasing"
+                else:
+                    # Fallback for very few windows
+                    p_val = float("nan")
+                    if windows[-1] > windows[0] * 1.5:
+                        variance_trend = "increasing"
+                    elif windows[-1] < windows[0] * 0.5:
+                        variance_trend = "decreasing"
 
                 temporal[col] = {
                     "window_variances": [round(v, 4) for v in windows],
                     "variance_trend": variance_trend,
+                    "trend_p_value": round(float(p_val), 4) if np.isfinite(p_val) else None,
                 }
         except (KeyError, TypeError) as e:
             warnings.warn(f"Temporal variance analysis skipped: {e}")
 
         return temporal
 
-    def _compute_uncertainty_score(self, cv: float, unexplained_ratio: float) -> float:
+    def _compute_uncertainty_score(
+        self, cv: float, unexplained_ratio: float, cv_method: str = "standard"
+    ) -> float:
         if cv == float("inf"):
-            cv_score = 1.0
+            # Insufficient data — can't determine, assign moderate uncertainty
+            cv_score = 0.5
+        elif cv_method == "std_fallback":
+            # For zero-mean features, cv = std/MAD.
+            # For normal data, std/MAD ≈ 1.48 — this is the *baseline*.
+            # Only flag as high uncertainty if dispersion is much larger
+            # than expected for a normal distribution.
+            # Sigmoid: std/MAD = 3.0 → score ≈ 0.5 (heavy-tailed → uncertain)
+            cv_score = 1 / (1 + np.exp(-3 * (cv - 3.0)))
         else:
+            # Standard CV: 0.5 → score ≈ 0.5, steepness = 5
             cv_score = 1 / (1 + np.exp(-5 * (cv - 0.5)))
 
         unexplained_score = unexplained_ratio

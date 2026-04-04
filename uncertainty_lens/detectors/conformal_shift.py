@@ -125,8 +125,19 @@ class ConformalShiftDetector:
             if mad == 0:
                 # Constant or near-constant: fall back to std
                 mad = float(series.std())
-            if mad == 0:
-                mad = 1.0  # truly constant feature
+                if mad == 0:
+                    # Truly constant feature — skip; shift detection is meaningless
+                    warnings.warn(
+                        f"Skipping feature '{col}' in conformal shift detection: "
+                        f"constant feature (MAD=0, std=0).",
+                        UserWarning,
+                    )
+                    continue
+                warnings.warn(
+                    f"Feature '{col}': MAD=0, falling back to std={mad:.4f} "
+                    f"for non-conformity scores.",
+                    UserWarning,
+                )
 
             scores = np.abs(series.values - median) / mad
             cal_scores[col] = scores
@@ -165,7 +176,16 @@ class ConformalShiftDetector:
                     mad = pop_profile[col]["mad"]
                     g_scores = np.abs(g_series.values - median) / mad
 
-                    ks_stat, p_val = sp_stats.ks_2samp(c_scores, g_scores)
+                    # Use method='asymp' to handle ties gracefully.
+                    # The KS test assumes continuous distributions; tied values
+                    # (common in quantized data) can inflate the test statistic.
+                    # Adding small jitter breaks ties without materially
+                    # affecting the distribution shape.
+                    jitter_scale = 1e-10 * (np.std(c_scores) + 1e-15)
+                    c_jittered = c_scores + rng.normal(0, jitter_scale, len(c_scores))
+                    g_jittered = g_scores + rng.normal(0, jitter_scale, len(g_scores))
+
+                    ks_stat, p_val = sp_stats.ks_2samp(c_jittered, g_jittered)
                     shifted = p_val < self.significance
 
                     group_shift[g_str][col] = {
@@ -189,14 +209,26 @@ class ConformalShiftDetector:
             n_shifted = sum(1 for p in pvals if p < self.significance)
             shift_ratio = n_shifted / len(pvals)
 
-            # Combine the worst p-value (Fisher's method is overkill here;
-            # use min-p transformed through a sigmoid for a smooth 0-1 score)
-            min_p = min(pvals)
-            # Sigmoid: p=0.05 → ~0.5, p→0 → 1.0, p→1 → 0.0
-            p_score = 1.0 / (1.0 + np.exp(10 * (min_p - self.significance)))
+            # Combine p-values using Fisher's method (sum of -2*log(p))
+            # This is a principled way to combine independent tests
+            pvals_clipped = [max(p, 1e-300) for p in pvals]  # avoid log(0)
+            fisher_stat = -2 * sum(np.log(p) for p in pvals_clipped)
+            # Under H0, fisher_stat ~ chi²(2k) where k = number of groups
+            k = len(pvals)
+            fisher_p = float(1.0 - sp_stats.chi2.cdf(fisher_stat, df=2 * k))
 
-            # Blend: how many groups shifted × how severe the worst shift is
-            score = 0.4 * shift_ratio + 0.6 * p_score
+            # Convert combined p-value to score:
+            # Use -log10(p) normalized by -log10(α) as the raw signal,
+            # then cap at 1.0
+            if fisher_p > 0:
+                raw_signal = -np.log10(max(fisher_p, 1e-300)) / -np.log10(self.significance)
+            else:
+                raw_signal = 10.0  # extremely significant
+
+            # Blend: 40% shift_ratio (how many groups) + 60% significance
+            # raw_signal = 1.0 when combined p = α, >1 when more significant
+            combined_significance = min(1.0, raw_signal)
+            score = 0.4 * shift_ratio + 0.6 * combined_significance
             uncertainty_scores[col] = round(float(min(1.0, score)), 4)
 
         results = {
