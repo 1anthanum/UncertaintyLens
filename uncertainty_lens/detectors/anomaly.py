@@ -148,9 +148,11 @@ class AnomalyDetector:
         vote_distribution: Dict,
         n_rows: int,
     ) -> float:
-        # Sigmoid: anomaly_rate = 8% → score ≈ 0.5
-        # Steepness 30: sharp transition (anomaly rates are typically small)
-        base_score = 1 / (1 + np.exp(-30 * (anomaly_rate - 0.08)))
+        # Sigmoid: anomaly_rate = 3% → score ≈ 0.5
+        # Consensus anomalies (agreed by ≥2 of 3 detectors) are rare;
+        # even 2% consensus rate is significant.
+        # Steepness 40: sharp transition around the inflection point.
+        base_score = 1 / (1 + np.exp(-40 * (anomaly_rate - 0.03)))
 
         # Small-sample penalty: anomaly detection is less reliable with
         # fewer observations.  log-scaling provides diminishing penalty.

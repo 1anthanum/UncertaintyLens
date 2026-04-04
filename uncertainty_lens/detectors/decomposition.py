@@ -230,14 +230,24 @@ class UncertaintyDecomposer:
             # (bootstrap internal variance ≈ population variance)
             ale_ratio = np.sqrt(aleatoric_raw) / pop_std
 
-            # Sigmoid scoring — both use the same normalization basis
-            # Epistemic: inflection at 1/√n = 0.1 (≈ n=100 baseline)
-            #   steepness 20: transitions over ~0.05-0.15 range
-            epi_score = float(1.0 / (1.0 + np.exp(-20 * (epi_ratio - 0.1))))
+            # Sigmoid scoring — measure EXCESS over theoretical baseline
+            #
+            # Epistemic: for well-sampled data, epi_ratio ≈ 1/√n.
+            # Score measures how much WORSE than this baseline the feature is.
+            # If n=100, baseline = 0.1; if n=10000, baseline = 0.01
+            n_valid = len(series)
+            epi_baseline = 1.0 / np.sqrt(max(n_valid, 2))
+            # Excess ratio: how many times worse than baseline?
+            epi_excess = epi_ratio / max(epi_baseline, 1e-10)
+            # Score: 1x baseline → 0.0, 3x baseline → ~0.5, 10x → ~0.95
+            epi_score = float(1.0 / (1.0 + np.exp(-3 * (epi_excess - 3.0))))
 
-            # Aleatoric: inflection at 1.0 (internal var = pop var, normal)
-            #   steepness 3: gradual transition; high only when truly noisy
-            ale_score = float(1.0 / (1.0 + np.exp(-3 * (ale_ratio - 1.0))))
+            # Aleatoric: ale_ratio ≈ 1.0 is the mathematical baseline
+            # (bootstrap internal var ≈ population var by construction).
+            # Score measures excess above this baseline.
+            # ale_ratio = 1.0 → score near 0; ale_ratio = 1.5 → ~0.5
+            ale_excess = ale_ratio - 1.0  # 0 = baseline, positive = excess noise
+            ale_score = float(1.0 / (1.0 + np.exp(-8 * (ale_excess - 0.2))))
 
             # Determine dominant component using a statistically motivated
             # threshold: one component is "dominant" if it contributes >2x

@@ -300,7 +300,9 @@ class UncertaintyPipeline:
                     # (they confirm low risk, not zero information)
                     active_weights[name] = raw_w * 0.1
 
-            # Re-normalize active weights
+            # Re-normalize active weights, excluding near-constant detectors.
+            # A detector with std < 0.01 across features provides no
+            # discrimination and would just compress the composite range.
             total_active = sum(active_weights.values())
             if total_active > 0:
                 composite = sum(
@@ -316,6 +318,26 @@ class UncertaintyPipeline:
                 "level": self._score_to_level(composite),
             }
             uncertainty_index[col] = entry
+
+        # ---- score calibration: expand compressed ranges ----
+        # When many detectors output similar scores, the weighted mean
+        # compresses into a narrow band.  Apply a percentile-anchored
+        # power stretch to use the full [0, 1] range while preserving
+        # ordering and absolute calibration anchors.
+        raw_composites = [v["composite_score"] for v in uncertainty_index.values()]
+        if len(raw_composites) >= 3:
+            score_range = max(raw_composites) - min(raw_composites)
+            score_std = float(np.std(raw_composites))
+            # Only stretch if scores are compressed (std < 0.1)
+            if score_std < 0.1 and score_range < 0.3:
+                med = float(np.median(raw_composites))
+                for col in uncertainty_index:
+                    raw = uncertainty_index[col]["composite_score"]
+                    # Center on median, stretch by 3x, re-anchor
+                    stretched = med + (raw - med) * 3.0
+                    stretched = max(0.0, min(1.0, stretched))
+                    uncertainty_index[col]["composite_score"] = round(stretched, 4)
+                    uncertainty_index[col]["level"] = self._score_to_level(stretched)
 
         # Sort high → low
         uncertainty_index = dict(
@@ -338,6 +360,50 @@ class UncertaintyPipeline:
 
         self.report_ = report
         return report
+
+    # ── report generation ───────────────────────────────────────────────
+
+    def generate_report(
+        self,
+        df: Optional[pd.DataFrame] = None,
+        output_path: str = "uncertainty_decision_report.html",
+        title: str = "Uncertainty Decision Report",
+    ) -> str:
+        """
+        Generate an interactive HTML decision report from the last analysis.
+
+        Must call :meth:`analyze` first.
+
+        Parameters
+        ----------
+        df : pd.DataFrame, optional
+            Original DataFrame (for summary stats in the report header).
+        output_path : str
+            Path to write the HTML file.
+        title : str
+            Report title.
+
+        Returns
+        -------
+        str
+            Absolute path to the generated report file.
+
+        Raises
+        ------
+        RuntimeError
+            If ``analyze()`` has not been called yet.
+        """
+        if self.report_ is None:
+            raise RuntimeError("No analysis report available. Call analyze() first.")
+
+        from uncertainty_lens.visualizers.report import generate_decision_report
+
+        return generate_decision_report(
+            report=self.report_,
+            df=df,
+            output_path=output_path,
+            title=title,
+        )
 
     # ── helpers ─────────────────────────────────────────────────────────
 
