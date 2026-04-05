@@ -358,6 +358,17 @@ class UncertaintyPipeline:
         for name, result in analysis_results.items():
             report[f"{name}_analysis"] = result
 
+        # ---- auto-explain: attach attribution breakdown ----
+        try:
+            from uncertainty_lens.detectors.uncertainty_explainer import (
+                UncertaintyExplainer,
+            )
+
+            explainer = UncertaintyExplainer(language="cn")
+            report["explanation"] = explainer.explain(report)
+        except Exception:
+            pass  # explanation is optional; never break the pipeline
+
         self.report_ = report
         return report
 

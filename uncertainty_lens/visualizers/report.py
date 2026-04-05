@@ -37,6 +37,12 @@ from uncertainty_lens.visualizers.decision import (
     create_conformal_intervals,
     create_shift_overview,
 )
+from uncertainty_lens.visualizers.explainer_charts import (
+    create_attribution_bar,
+    create_global_radar,
+    build_action_plan_html,
+)
+from uncertainty_lens.detectors.uncertainty_explainer import UncertaintyExplainer
 
 
 def _fig_to_html_div(fig: go.Figure, div_id: str = "") -> str:
@@ -166,6 +172,10 @@ def generate_decision_report(
     missing_analysis = report.get("missing_analysis", {})
     anomaly_analysis = report.get("anomaly_analysis", {})
 
+    # ── Run Explainer ────────────────────────────────────────────────
+    explainer = UncertaintyExplainer(language="cn")
+    explanation = explainer.explain(report)
+
     # ── Build chart HTML divs ──────────────────────────────────────────
 
     charts_html = {}
@@ -268,6 +278,23 @@ def generate_decision_report(
         charts_html["shift"] = _fig_to_html_div(fig_shift, "chart-shift")
     else:
         charts_html["shift"] = ""
+
+    # 9. Attribution bar (explainer)
+    fig_attr = create_attribution_bar(
+        explanation,
+        title="Uncertainty Attribution — What's Driving Each Feature's Score?",
+    )
+    charts_html["attribution"] = _fig_to_html_div(fig_attr, "chart-attribution")
+
+    # 10. Global radar (explainer)
+    fig_radar = create_global_radar(
+        explanation,
+        title="Data Quality Radar — Overall Health by Dimension",
+    )
+    charts_html["radar"] = _fig_to_html_div(fig_radar, "chart-radar")
+
+    # 11. Action plan HTML (explainer)
+    charts_html["action_plan"] = build_action_plan_html(explanation)
 
     # ── Build recommendations HTML ─────────────────────────────────────
     rec_html = _build_recommendations_html(recommendations)
@@ -487,6 +514,60 @@ def generate_decision_report(
             font-size: 12px;
             color: #7f8c8d;
         }}
+        .insight-grid {{
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 12px;
+            margin-bottom: 16px;
+        }}
+        .insight-card {{
+            padding: 12px 16px;
+            background: #fafbfc;
+            border-radius: 6px;
+        }}
+        .insight-header {{
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            margin-bottom: 4px;
+        }}
+        .insight-icon {{ font-size: 16px; }}
+        .insight-label {{ font-weight: 600; font-size: 13px; }}
+        .insight-score {{ margin-left: auto; font-size: 12px; font-weight: 600; }}
+        .insight-body {{ font-size: 12px; color: #7f8c8d; }}
+        .action-list {{
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }}
+        .action-item {{
+            padding: 12px 16px;
+            background: #fafbfc;
+            border-radius: 6px;
+        }}
+        .action-header {{
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 4px;
+        }}
+        .action-priority {{
+            font-weight: 700;
+            font-size: 14px;
+            color: #34495e;
+            min-width: 24px;
+        }}
+        .action-label {{ font-weight: 600; font-size: 13px; }}
+        .action-features {{
+            font-size: 12px;
+            color: #3498db;
+            margin-bottom: 4px;
+        }}
+        .action-text {{
+            font-size: 12px;
+            color: #555;
+            line-height: 1.5;
+        }}
         footer {{
             text-align: center;
             padding: 20px;
@@ -533,6 +614,34 @@ def generate_decision_report(
         {shift_section}
 
         {rec_section}
+
+        <section class="report-section">
+            <h2>Uncertainty Attribution</h2>
+            <p class="section-desc">
+                Why is each feature uncertain? This chart decomposes each feature's
+                score into contributions from individual detectors — showing the
+                <b>root cause</b> of uncertainty, not just the score.
+            </p>
+            <div class="tab-container">
+                <button class="tab-btn active" onclick="switchTab(event, 'tab-attr-bar')">Attribution Bar</button>
+                <button class="tab-btn" onclick="switchTab(event, 'tab-radar')">Quality Radar</button>
+            </div>
+            <div id="tab-attr-bar" class="tab-content active">
+                {charts_html["attribution"]}
+            </div>
+            <div id="tab-radar" class="tab-content">
+                {charts_html["radar"]}
+            </div>
+        </section>
+
+        <section class="report-section">
+            <h2>Action Plan</h2>
+            <p class="section-desc">
+                Prioritized recommendations based on the attribution analysis.
+                Addresses the most impactful data quality issues first.
+            </p>
+            {charts_html["action_plan"]}
+        </section>
 
         <section class="report-section">
             <h2>Uncertainty Breakdown</h2>
