@@ -29,5 +29,14 @@ jobs:
       - name: Lint with black
         run: black --check uncertainty_lens/ tests/
 
-      - name: Run tests
-        run: pytest tests/ -v
+      - name: Run unit tests
+        run: PYTHONPATH=. python -m pytest tests/ -v --tb=short
+
+      - name: Run core benchmark (39 checks)
+        run: PYTHONPATH=. python examples/benchmark_all.py
+
+      - name: Run blind test (25 checks)
+        run: PYTHONPATH=. python examples/benchmark_blind.py
+
+      - name: Run extended test (27 checks)
+        run: PYTHONPATH=. python examples/benchmark_extended.py
