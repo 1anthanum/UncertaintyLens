@@ -234,6 +234,51 @@ UncertaintyLens/
 └── LICENSE
 ```
 
+## Comparison with Existing Tools
+
+UncertaintyLens occupies a specific niche: **statistical uncertainty quantification per feature**, with automatic attribution and remediation advice. Here's how it compares to established data quality tools:
+
+| Capability | UncertaintyLens | Great Expectations | Evidently AI | Deepchecks |
+|------------|----------------|-------------------|--------------|------------|
+| **Primary focus** | Uncertainty scoring & attribution | Rule-based data validation | ML monitoring & drift detection | ML validation & testing |
+| **Approach** | Statistical detection (automated) | User-defined expectations (manual rules) | Pre-built reports & dashboards | Pre-built test suites |
+| **Output** | 0–1 uncertainty score per feature + "why" | Pass/fail per expectation | Drift reports & metrics | Test suite results |
+| **Attribution** | Yes — per-detector contribution breakdown | No | No | No |
+| **Action plans** | Yes — prioritized remediation advice | No (reports pass/fail only) | No | No |
+| **Detectors** | 10 statistical detectors | 300+ expectations (rule templates) | 100+ metrics | 50+ checks |
+| **Setup effort** | Zero-config (auto-detects issues) | High (must define expectations manually) | Low–Medium | Low–Medium |
+| **Production monitoring** | StreamingDetector (basic) | Mature (Airflow/dbt integration) | Mature (cloud platform) | Mature (cloud platform) |
+| **Scale** | Small–medium datasets (<100K rows) | Enterprise-scale | Enterprise-scale | Enterprise-scale |
+| **LLM/NLP support** | No | No | Yes | Yes |
+
+**When to use UncertaintyLens:**
+
+- You want a quick, automated scan that tells you *what's wrong* and *why* — without writing any rules
+- You need per-feature uncertainty scores to decide which columns are safe to use downstream
+- You want attribution: "this feature's problem is 60% missing values, 30% anomalies"
+
+**When to use the others instead:**
+
+- You need production-grade pipeline integration with Airflow/dbt/Spark (use Great Expectations)
+- You need continuous ML model monitoring in production (use Evidently AI)
+- You need end-to-end ML validation from data to model to deployment (use Deepchecks)
+
+UncertaintyLens is not a replacement for these tools — it answers a different question. They ask "does this data meet my rules?" UncertaintyLens asks "how uncertain is this data, and where does the uncertainty come from?"
+
+## Known Limitations
+
+1. **Numeric columns only** — Non-numeric features (categorical, text, datetime) are not analyzed directly. They can be used as `group_col` for group-wise comparison, but categorical uncertainty (label noise, category sparsity) is not covered.
+
+2. **Composite score is heuristic** — The 0–1 uncertainty score is a weighted average of detector outputs, not a formal statistical quantity. The score calibration stretch (3× when std < 0.1) improves dynamic range but has no theoretical guarantee. Interpret it as a relative ranking, not an absolute probability.
+
+3. **Scalability** — MMD shift detection uses permutation testing with O(n²) kernel computation. For datasets significantly larger than 100K rows, consider subsampling or using only the lighter detectors (Missing, Anomaly, Variance).
+
+4. **i.i.d. assumption** — All detectors assume rows are independent and identically distributed. Time series autocorrelation, sequential dependencies, and temporal patterns are not handled (except basic trend detection in VarianceDetector).
+
+5. **No categorical uncertainty** — Issues like label inconsistency, category sparsity, and encoding bias in categorical features are not detected.
+
+6. **Zero-inflation scoring** — When a feature has >90% zeros, anomaly and conformal detectors treat "predicting zero" as accurate, which can understate the composite score.
+
 ## Tech Stack
 
 - **Analysis**: pandas, NumPy, SciPy, scikit-learn
